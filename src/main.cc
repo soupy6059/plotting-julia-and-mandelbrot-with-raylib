@@ -67,19 +67,8 @@ func<cplx(cplx)> julia(cplx C) {
     };
 }
 
-std::atomic<bool> ComputingJulia = false;
-inline void go_compute_julia(std::vector<cplx> &JuliaIterations, cplx JuliaConstant) {
-    ComputingJulia = true;
-    JuliaIterations.at(0) = (1.0 + sqrt(1.0 - 4.0*JuliaConstant))/2.0;
-    for(uint64_t I = 1; I < JuliaIterations.size(); ++I) {
-        JuliaIterations.at(I) = static_cast<cplx>((rand()%2)*2-1)
-            * sqrt(JuliaIterations.at(I-1) - JuliaConstant);
-    }
-    ComputingJulia = false;
-}
-
 std::atomic<bool> ComputingPixelJulia = false;
-void go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colours, cplx JuliaConstant) {
+inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colours, cplx JuliaConstant) {
     using namespace std::complex_literals;
     ComputingPixelJulia = true;
     constexpr uint64_t N = 1000;
@@ -150,6 +139,10 @@ int main() {
     Raylib.set_target_FPS(15);
 
     vector<rl::Color> Pixels(Raylib.Screen.Width*Raylib.Screen.Height);
+    auto GoComputeJulia = [](raylib &Raylib, decltype(Pixels) &Pixels, cplx &Constant) -> void {
+        go_compute_pixel_julia(Raylib, Pixels, Constant);
+    };
+
     vector<rl::Color> Mandelbrot(Raylib.Screen.Width*Raylib.Screen.Height);
     cout << "Computing Mandelbrot..." << '\n';
     go_compute_mandelbrot(Raylib, Mandelbrot);
@@ -166,7 +159,7 @@ int main() {
                 using enum raylib::thread_name;
                 ComputingPixelJulia = true;
                 if(thread &Thrd = This->Pool.at(JuliaPixel); Thrd.joinable()) Thrd.join();
-                This->Pool.at(JuliaPixel) = thread{go_compute_pixel_julia, ref(*This), ref(Pixels), ref(Julia.Constant)};
+                This->Pool.at(JuliaPixel) = thread{GoComputeJulia, ref(*This), ref(Pixels), ref(Julia.Constant)};
             }
         }
 
@@ -178,7 +171,7 @@ int main() {
             for(uint64_t Y = 0; Y < This->Screen.Height; ++Y)
                 if(rl::Color MandelColor = Mandelbrot[X+Y*This->Screen.Width]; DisplayMandelbrot && rl::ColorToInt(MandelColor) != rl::ColorToInt(rl::RAYWHITE)) {
                     rl::Color Pixel = Pixels[X+Y*This->Screen.Width];
-                    rl::Color Blend = rl::GetColor((rl::ColorToInt(MandelColor) + rl::ColorToInt(Pixel))/2);
+                    rl::Color Blend = rl::GetColor(((long)rl::ColorToInt(MandelColor) + (long)rl::ColorToInt(Pixel))/2);
                     rl::DrawPixel(X, Y, Blend);
                 }
                 else
