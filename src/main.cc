@@ -82,13 +82,13 @@ static auto julia = [](cplx C) -> func<cplx(cplx)> {
 };
 
 std::atomic<bool> ComputingPixelJulia = false;
-inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colours, cplx JuliaConstant) {
+inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colours, cplx JuliaConstant, uint64_t DrawingThreadCount) {
     using namespace std::complex_literals;
     using namespace std;
     ComputingPixelJulia = true;
     constexpr uint64_t N = 1000;
 
-    array<thread,16> ComputePool;
+    vector<thread> ComputePool(DrawingThreadCount);
     uint64_t XsPerThread = Raylib.Screen.Width/ComputePool.size() + 1;
     atomic<uint64_t> Done = 0;
 
@@ -164,7 +164,8 @@ int main() {
 
     vector<rl::Color> Pixels(Raylib.Screen.Width*Raylib.Screen.Height);
     auto GoComputeJulia = [](raylib &Raylib, decltype(Pixels) &Pixels, cplx &Constant) -> void {
-        go_compute_pixel_julia(Raylib, Pixels, Constant);
+        go_compute_pixel_julia(Raylib, Pixels, Constant, thread::hardware_concurrency() - 1);
+        //go_compute_pixel_julia(Raylib, Pixels, Constant, 200);
     };
 
     vector<rl::Color> Mandelbrot(Raylib.Screen.Width*Raylib.Screen.Height);
