@@ -118,11 +118,7 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
                     Z = julia(JuliaConstant)(Z);
                     ++Work;
                 }
-                if(K != N) {
-                    float Factor = (float)K/(float)N;
-                    Colours[Raylib.Screen.at(X,Y)] = Raylib.color_lerp(rl::BLUE, rl::RAYWHITE, Factor);
-                }
-                else Colours[Raylib.Screen.at(X,Y)] = rl::RAYWHITE;
+                Colours[Raylib.Screen.at(X,Y)] = Raylib.color_lerp(rl::DARKBLUE, rl::RAYWHITE, sqrt((float)K/(float)N));
             }
            if(Work >= WorkCapacity && SizeOfChunk > 3) {
                 SizeOfChunk *= 2.f/3.f;
@@ -136,7 +132,7 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
                 Work = 0;
             }
         }
-        cout << "Thread " << this_thread::get_id() << " did " << Work << " work\n";
+        if(Work >= WorkCapacity) clog << "Thread " << this_thread::get_id() << " did " << Work << " work\n";
         --Alive;
         ComputeRights.release();
     };
@@ -171,11 +167,7 @@ void go_compute_mandelbrot(raylib &Raylib, std::vector<rl::Color> &Colours) {
                     if(abs(Z) >= 2.) break;
                     Z = julia(C)(Z);
                 }
-                if(K != N) {
-                    float Factor = (float)K/(float)N;
-                    Colours[Raylib.Screen.at(X,Y)] = Raylib.color_lerp(rl::RAYWHITE, rl::RED, Factor);
-                }
-                else Colours[Raylib.Screen.at(X,Y)] = rl::RED;
+                Colours[Raylib.Screen.at(X,Y)] = Raylib.color_lerp(rl::RAYWHITE, rl::RED, (float)K/(float)N);
             }
         }
     };
