@@ -83,6 +83,11 @@ static auto julia = [](cplx C) -> func<cplx(cplx)> {
 };
 
 // distribution of work
+// -> binary tree dispatch of threads, decreasing ChunkSize by 2 if encountering too much work
+//
+// // assuming that if we've done a lot of work, we'll still need to do alot of work, ...
+// // WorkCapacity is based on the size of the chunk?
+// if(Work > WorkCapacity) divide_the_rest_of_the_work_into_2()
 std::binary_semaphore ComputingPixelJulia{1};
 inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colours, cplx JuliaConstant, uint64_t DrawingThreadCount) {
     using namespace std::complex_literals;
@@ -90,13 +95,18 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
     constexpr uint64_t N = 1000;
 
     vector<thread> ComputePool(DrawingThreadCount);
+    ComputePool.reserve(1920);
+    atomic<uint64_t> Thread = 0;
     uint64_t XsPerThread = Raylib.Screen.Width/ComputePool.size() + 1;
 
     counting_semaphore ComputeRights{thread::hardware_concurrency() - 2};
 
-    auto ComputeLine = [&ComputeRights,XsPerThread](uint64_t Start, raylib &Raylib, vector<rl::Color> &Colours, cplx JuliaConstant) -> void {
+    function<void(uint64_t,uint64_t,raylib&,vector<rl::Color>&,cplx)> ComputeLine; 
+    ComputeLine = [&Thread,&ComputePool,&ComputeLine,&ComputeRights](uint64_t Start, uint64_t SizeOfChunk, raylib &Raylib, vector<rl::Color> &Colours, cplx JuliaConstant) -> void {
         ComputeRights.acquire();
-        for(uint64_t X = Start; X < XsPerThread + Start && X < Raylib.Screen.Width; ++X) {
+        uint64_t Work = 0;
+        const uint64_t WorkCapacity = 2500000;
+        for(uint64_t X = Start; X < SizeOfChunk + Start && X < Raylib.Screen.Width; ++X) {
             for(uint64_t Y = 0; Y < Raylib.Screen.Height; ++Y) {
                 rl::Vector2 GraphCord = Raylib.screen_to_graph({(float)X,(float)Y});
                 cplx Z = (double)GraphCord.x + (double)GraphCord.y*1.0i;
@@ -108,6 +118,7 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
                         break;
                     }
                     Z = julia(JuliaConstant)(Z);
+                    ++Work;
                 }
                 if(TooLarge) {
                     float Factor = (float)K/(float)N;
@@ -115,15 +126,26 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
                 }
                 else Colours[Raylib.Screen.at(X,Y)] = rl::RAYWHITE;
             }
+           if(Work >= WorkCapacity && SizeOfChunk > 3) {
+                SizeOfChunk *= 2.f/3.f;
+                ComputePool.push_back(thread{
+                    ComputeLine, Start + SizeOfChunk-1, SizeOfChunk/2.f+2, ref(Raylib), ref(Colours), JuliaConstant
+                });
+                Thread = 0;
+                Work = 0;
+            }
         }
+        cout << "Thread " << this_thread::get_id() << " did " << Work << " work\n";
         ComputeRights.release();
     };
 
-    for(uint64_t Thread = 0; Thread < ComputePool.size(); ++Thread) {
-        ComputePool.at(Thread) = thread{ ComputeLine, Thread*XsPerThread, ref(Raylib), ref(Colours), JuliaConstant };
+    for(uint64_t InitThread = 0; InitThread < ComputePool.size(); ++InitThread) {
+        ComputePool.at(InitThread) = thread{ ComputeLine, InitThread*XsPerThread, XsPerThread, ref(Raylib), ref(Colours), JuliaConstant };
     }
 
-    for(thread &Thread: ComputePool) Thread.join();
+    for(; Thread < ComputePool.size(); ++Thread) {
+        if(ComputePool.at(Thread).joinable()) ComputePool.at(Thread).join();
+    }
 
     ComputingPixelJulia.release();
 }
@@ -175,7 +197,7 @@ int main() {
     struct {func<cplx(cplx)> fn; cplx Constant; } Julia = {nullptr, -1.};
     Julia.fn = julia(Julia.Constant);
 
-    raylib Raylib {{1920,1080,"Julia"}};
+    raylib Raylib {{1000,1000,"Julia"}};
     Raylib.set_target_FPS(15);
 
     vector<rl::Color> Pixels(Raylib.Screen.Width*Raylib.Screen.Height);
