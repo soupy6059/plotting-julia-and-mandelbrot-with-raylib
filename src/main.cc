@@ -82,12 +82,6 @@ static auto julia = [](cplx C) -> func<cplx(cplx)> {
     };
 };
 
-// distribution of work
-// -> binary tree dispatch of threads, decreasing ChunkSize by 2 if encountering too much work
-//
-// // assuming that if we've done a lot of work, we'll still need to do alot of work, ...
-// // WorkCapacity is based on the size of the chunk?
-// if(Work > WorkCapacity) divide_the_rest_of_the_work_into_2()
 std::binary_semaphore ComputingPixelJulia{1};
 inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colours, cplx JuliaConstant, uint64_t DrawingThreadCount) {
     using namespace std::complex_literals;
@@ -123,7 +117,7 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
             }
            if(Work >= WorkCapacity && SizeOfChunk > 3) {
                 SizeOfChunk *= 2.f/3.f;
-                ++Alive;
+                Alive.fetch_add(1, memory_order::relaxed);
                 PushRight.acquire();
                 ComputePool.push_back(thread{
                     ComputeLine, Start + SizeOfChunk-1, SizeOfChunk/2.f+2
@@ -134,7 +128,7 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
             }
         }
         if(Work >= WorkCapacity) clog << "Thread " << this_thread::get_id() << " did " << Work << " work\n";
-        --Alive;
+        if(Alive.fetch_sub(1, memory_order::acq_rel) == 1) Alive.notify_all();
         ComputeRights.release();
     };
 
@@ -143,7 +137,11 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
         ComputePool.at(InitThread).detach();
     }
 
-    while(Alive != 0) {}
+    uint64_t Old = Alive.load(memory_order::acquire);
+    while (Old != 0) {
+        Alive.wait(Old);
+        Old = Alive.load(memory_order::acquire);
+    }
 
     ComputingPixelJulia.release();
 }
