@@ -102,9 +102,10 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
     uint64_t XsPerThread = Raylib.Screen.Width/ComputePool.size() + 1;
 
     counting_semaphore ComputeRights{thread::hardware_concurrency() - 2};
+    auto JuliaFunc = julia(JuliaConstant);
 
-    function<void(uint64_t,uint64_t,raylib&,vector<rl::Color>&,cplx)> ComputeLine; 
-    ComputeLine = [&PushRight,&Alive,&ComputePool,&ComputeLine,&ComputeRights](uint64_t Start, uint64_t SizeOfChunk, raylib &Raylib, vector<rl::Color> &Colours, cplx JuliaConstant) -> void {
+    function<void(uint64_t,uint64_t)> ComputeLine; 
+    ComputeLine = [&,JuliaFunc](uint64_t Start, uint64_t SizeOfChunk) -> void {
         ComputeRights.acquire();
         uint64_t Work = 0;
         const uint64_t WorkCapacity = 2500000;
@@ -115,17 +116,17 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
                 uint64_t K = 0;
                 for(; K < N; ++K) {
                     if(abs(Z) >= abs(JuliaConstant)+1.) break;
-                    Z = julia(JuliaConstant)(Z);
+                    Z = JuliaFunc(Z);
                     ++Work;
                 }
-                Colours[Raylib.Screen.at(X,Y)] = Raylib.color_lerp(rl::DARKBLUE, rl::RAYWHITE, sqrt((float)K/(float)N));
+                Colours[Raylib.Screen.at(X,Y)] = Raylib.color_lerp(rl::DARKBLUE, rl::ORANGE, sqrt((float)K/(float)N));
             }
            if(Work >= WorkCapacity && SizeOfChunk > 3) {
                 SizeOfChunk *= 2.f/3.f;
                 ++Alive;
                 PushRight.acquire();
                 ComputePool.push_back(thread{
-                    ComputeLine, Start + SizeOfChunk-1, SizeOfChunk/2.f+2, ref(Raylib), ref(Colours), JuliaConstant
+                    ComputeLine, Start + SizeOfChunk-1, SizeOfChunk/2.f+2
                 });
                 (ComputePool.end()-1)->detach();
                 PushRight.release();
@@ -138,7 +139,7 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
     };
 
     for(uint64_t InitThread = 0; InitThread < ComputePool.size(); ++InitThread) {
-        ComputePool.at(InitThread) = thread{ ComputeLine, InitThread*XsPerThread, XsPerThread, ref(Raylib), ref(Colours), JuliaConstant };
+        ComputePool.at(InitThread) = thread{ ComputeLine, InitThread*XsPerThread, XsPerThread };
         ComputePool.at(InitThread).detach();
     }
 
