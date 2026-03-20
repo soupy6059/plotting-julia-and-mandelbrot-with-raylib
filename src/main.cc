@@ -93,16 +93,17 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
     using namespace std::complex_literals;
     using namespace std;
     constexpr uint64_t N = 1000;
-
+    
+    binary_semaphore PushRight{1};
     vector<thread> ComputePool(DrawingThreadCount);
     ComputePool.reserve(1920);
-    atomic<uint64_t> Thread = 0;
+    atomic<uint64_t> Alive = ComputePool.size();
     uint64_t XsPerThread = Raylib.Screen.Width/ComputePool.size() + 1;
 
     counting_semaphore ComputeRights{thread::hardware_concurrency() - 2};
 
     function<void(uint64_t,uint64_t,raylib&,vector<rl::Color>&,cplx)> ComputeLine; 
-    ComputeLine = [&Thread,&ComputePool,&ComputeLine,&ComputeRights](uint64_t Start, uint64_t SizeOfChunk, raylib &Raylib, vector<rl::Color> &Colours, cplx JuliaConstant) -> void {
+    ComputeLine = [&PushRight,&Alive,&ComputePool,&ComputeLine,&ComputeRights](uint64_t Start, uint64_t SizeOfChunk, raylib &Raylib, vector<rl::Color> &Colours, cplx JuliaConstant) -> void {
         ComputeRights.acquire();
         uint64_t Work = 0;
         const uint64_t WorkCapacity = 2500000;
@@ -128,24 +129,27 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
             }
            if(Work >= WorkCapacity && SizeOfChunk > 3) {
                 SizeOfChunk *= 2.f/3.f;
+                ++Alive;
+                PushRight.acquire();
                 ComputePool.push_back(thread{
                     ComputeLine, Start + SizeOfChunk-1, SizeOfChunk/2.f+2, ref(Raylib), ref(Colours), JuliaConstant
                 });
-                Thread = 0;
+                (ComputePool.end()-1)->detach();
+                PushRight.release();
                 Work = 0;
             }
         }
         cout << "Thread " << this_thread::get_id() << " did " << Work << " work\n";
+        --Alive;
         ComputeRights.release();
     };
 
     for(uint64_t InitThread = 0; InitThread < ComputePool.size(); ++InitThread) {
         ComputePool.at(InitThread) = thread{ ComputeLine, InitThread*XsPerThread, XsPerThread, ref(Raylib), ref(Colours), JuliaConstant };
+        ComputePool.at(InitThread).detach();
     }
 
-    for(; Thread < ComputePool.size(); ++Thread) {
-        if(ComputePool.at(Thread).joinable()) ComputePool.at(Thread).join();
-    }
+    while(Alive != 0) {}
 
     ComputingPixelJulia.release();
 }
