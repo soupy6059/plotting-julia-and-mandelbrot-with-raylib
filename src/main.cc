@@ -97,7 +97,8 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
     binary_semaphore PushRight{1};
     vector<thread> ComputePool(DrawingThreadCount);
     ComputePool.reserve(1920);
-    atomic<uint64_t> Alive = ComputePool.size();
+    atomic<uint64_t> Alive = ComputePool.size(); // something better? latch/barrier/.....
+
     uint64_t XsPerThread = Raylib.Screen.Width/ComputePool.size() + 1;
 
     counting_semaphore ComputeRights{thread::hardware_concurrency() - 2};
@@ -111,17 +112,13 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
             for(uint64_t Y = 0; Y < Raylib.Screen.Height; ++Y) {
                 rl::Vector2 GraphCord = Raylib.screen_to_graph({(float)X,(float)Y});
                 cplx Z = (double)GraphCord.x + (double)GraphCord.y*1.0i;
-                bool TooLarge = false;
                 uint64_t K = 0;
                 for(; K < N; ++K) {
-                    if(abs(Z) >= abs(JuliaConstant)+1.) {
-                        TooLarge = true;
-                        break;
-                    }
+                    if(abs(Z) >= abs(JuliaConstant)+1.) break;
                     Z = julia(JuliaConstant)(Z);
                     ++Work;
                 }
-                if(TooLarge) {
+                if(K != N) {
                     float Factor = (float)K/(float)N;
                     Colours[Raylib.Screen.at(X,Y)] = Raylib.color_lerp(rl::BLUE, rl::RAYWHITE, Factor);
                 }
@@ -169,16 +166,12 @@ void go_compute_mandelbrot(raylib &Raylib, std::vector<rl::Color> &Colours) {
                 rl::Vector2 GraphCord = Raylib.screen_to_graph({(float)X,(float)Y});
                 cplx C = (double)GraphCord.x + (double)GraphCord.y*1.0i;
                 cplx Z = 0.+0.i;
-                bool TooLarge = false;
                 uint64_t K = 0;
                 for(; K < N; ++K) {
-                    if(abs(Z) >= 2.) {
-                        TooLarge = true;
-                        break;
-                    }
+                    if(abs(Z) >= 2.) break;
                     Z = julia(C)(Z);
                 }
-                if(TooLarge) {
+                if(K != N) {
                     float Factor = (float)K/(float)N;
                     Colours[Raylib.Screen.at(X,Y)] = Raylib.color_lerp(rl::RAYWHITE, rl::RED, Factor);
                 }
@@ -233,6 +226,7 @@ int main() {
         if(rl::IsKeyPressed(rl::KEY_SPACE)) {
             DisplayMandelbrot = !DisplayMandelbrot;
         }
+        
 
         for(uint64_t X = 0; X < This->Screen.Width; ++X)
             for(uint64_t Y = 0; Y < This->Screen.Height; ++Y)
