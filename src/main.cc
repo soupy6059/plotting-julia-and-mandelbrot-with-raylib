@@ -9,6 +9,10 @@
 #include <thread>
 #include "craylib.hpp"
 
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+
 struct raylib {
     struct screen {
         uint64_t Width; 
@@ -62,7 +66,6 @@ struct raylib {
         return GPos;
     }
 
-    // 0.f ==> use Src
     static inline rl::Color color_lerp(rl::Color Src, rl::Color Dest, float Reduct) {
         rl::Color Color = {0};
         Color.r = Reduct * Dest.r + (1.f-Reduct) * Src.r;
@@ -91,7 +94,7 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
     binary_semaphore PushRight{1};
     vector<thread> ComputePool(DrawingThreadCount);
     ComputePool.reserve(1920);
-    atomic<uint64_t> Alive = ComputePool.size(); // something better? latch/barrier/.....
+    atomic<uint64_t> Alive = ComputePool.size();
 
     uint64_t XsPerThread = Raylib.Screen.Width/ComputePool.size() + 1;
 
@@ -102,7 +105,8 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
     ComputeLine = [&,JuliaFunc](uint64_t Start, uint64_t SizeOfChunk) -> void {
         ComputeRights.acquire();
         uint64_t Work = 0;
-        const uint64_t WorkCapacity = 1500000;
+        const uint64_t WorkCapacity = 1 << 21;
+        static_assert(WorkCapacity == 2097152);
         for(uint64_t X = Start; X < SizeOfChunk + Start && X < Raylib.Screen.Width; ++X) {
             for(uint64_t Y = 0; Y < Raylib.Screen.Height; ++Y) {
                 rl::Vector2 GraphCord = Raylib.screen_to_graph({(float)X,(float)Y});
@@ -113,7 +117,13 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
                     Z = JuliaFunc(Z);
                     ++Work;
                 }
-                Colours[Raylib.Screen.at(X,Y)] = Raylib.color_lerp(rl::DARKBLUE, rl::ORANGE, sqrt((float)K/(float)N));
+                constexpr const auto BetterGradient = [](double Factor) -> float {
+                    return static_cast<float>(
+                        1./(1.+exp(-10.*(Factor-0.25)))
+                    );
+                };
+                const float Colour = static_cast<float>(K)/static_cast<float>(N);
+                Colours[Raylib.Screen.at(X,Y)] = Raylib.color_lerp(rl::DARKBLUE, rl::ORANGE, BetterGradient(Colour));
             }
            if(Work >= WorkCapacity && SizeOfChunk > 3) {
                 SizeOfChunk *= 2.f/3.f;
@@ -127,7 +137,7 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
                 Work = 0;
             }
         }
-        if(Work >= WorkCapacity) clog << "Thread " << this_thread::get_id() << " did " << Work << " work\n";
+        if constexpr(DEBUG) if(Work >= WorkCapacity) clog << "Thread " << this_thread::get_id() << " did " << Work << " work\n";
         if(Alive.fetch_sub(1, memory_order::acq_rel) == 1) Alive.notify_all();
         ComputeRights.release();
     };
@@ -191,7 +201,6 @@ int main() {
     vector<rl::Color> Pixels(Raylib.Screen.Width*Raylib.Screen.Height);
     auto GoComputeJulia = [](raylib &Raylib, decltype(Pixels) &Pixels, cplx &Constant) -> void {
         go_compute_pixel_julia(Raylib, Pixels, Constant, 100);
-        //go_compute_pixel_julia(Raylib, Pixels, Constant, 200);
     };
 
     vector<rl::Color> Mandelbrot(Raylib.Screen.Width*Raylib.Screen.Height);

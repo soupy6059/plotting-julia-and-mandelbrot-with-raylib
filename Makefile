@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++23 -Wall -Wextra -g -O3 -DVA_LIST_ERROR -DRAND_TABLE -Wno-missing-field-initializers -D__gnuc_va_list=__builtin_va_list
+CXXFLAGS = -std=c++23 -Wall -Wextra -g -O3 -DVA_LIST_ERROR -DDEBUG=1 -DRAND_TABLE -Wno-missing-field-initializers -D__gnuc_va_list=__builtin_va_list
 TARGET = main
 
 RAYLIB_PATH=/nix/store/y8v2pmxvc181ihb3aj67plyg22m7b6w5-raylib-5.0#$(shell nix-build '<nixpkgs>' -A raylib --no-out-link)
