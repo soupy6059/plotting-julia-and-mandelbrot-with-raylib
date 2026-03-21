@@ -102,7 +102,7 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
     ComputeLine = [&,JuliaFunc](uint64_t Start, uint64_t SizeOfChunk) -> void {
         ComputeRights.acquire();
         uint64_t Work = 0;
-        const uint64_t WorkCapacity = 2500000;
+        const uint64_t WorkCapacity = 1500000;
         for(uint64_t X = Start; X < SizeOfChunk + Start && X < Raylib.Screen.Width; ++X) {
             for(uint64_t Y = 0; Y < Raylib.Screen.Height; ++Y) {
                 rl::Vector2 GraphCord = Raylib.screen_to_graph({(float)X,(float)Y});
