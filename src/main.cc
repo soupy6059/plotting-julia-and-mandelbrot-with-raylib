@@ -139,9 +139,7 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
                 lock_guard<mutex> Acquired{PushRight};
                 SizeOfChunk *= 2.f/3.f;
                 Alive.fetch_add(1, memory_order::relaxed);
-                ComputePool.push_back(thread{
-                        ComputeLine, Start + SizeOfChunk-1, SizeOfChunk/2.f+2
-                        });
+                ComputePool.push_back(thread{ComputeLine, Start + SizeOfChunk-1, SizeOfChunk/2.f+2});
                 (ComputePool.end()-1)->detach();
                 Work = 0;
             }
@@ -250,18 +248,3 @@ int main() {
         rl::DrawText(Str.c_str(), 10, 30, 20, rl::ORANGE);
     });
 }
-
-/*
-
-rl {
-    struct screen {
-        uint64_t Width;
-        uint64_t Height;
-        string Name;
-    };
-    struct engine {
-        engine(screen);
-    };
-};
-
-*/
