@@ -120,7 +120,7 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
         for(uint64_t X = Start; X < SizeOfChunk + Start && X < Raylib.Screen.Width; ++X) {
             for(uint64_t Y = 0; Y < Raylib.Screen.Height; ++Y) {
                 rl::Vector2 GraphCord = Raylib.screen_to_graph({(float)X,(float)Y});
-                cplx Z = (double)GraphCord.x + (double)GraphCord.y*1.0i;
+                cplx Z {(double)GraphCord.x, (double)GraphCord.y};
                 uint64_t K = 0;
                 for(; K < N; ++K) {
                     if(abs(Z) >= abs(JuliaConstant)+1.) break;
