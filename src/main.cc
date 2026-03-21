@@ -1,4 +1,6 @@
 #include <iostream>
+#include <cassert>
+#include <mutex>
 #include <functional>
 #include <semaphore>
 #include <complex>
@@ -73,6 +75,14 @@ struct raylib {
         Color.b = Reduct * Dest.b + (1.f-Reduct) * Src.b;
         Color.a = 255;
         return Color;
+    }
+    inline raylib &draw_pixel(uint64_t X, uint64_t Y, rl::Color Color) {
+        if constexpr(DEBUG) {
+            if(X > Screen.Width) assert(false && "BAD DIMENSIONS");
+            if(Y > Screen.Height) assert(false && "BAD DIMENSIONS");
+        }
+        rl::DrawPixel(X,Y,Color);
+        return *this;
     }
 };
 
@@ -204,7 +214,7 @@ int main() {
     };
 
     vector<rl::Color> Mandelbrot(Raylib.Screen.Width*Raylib.Screen.Height);
-    cout << "Threads Allowed: " << thread::hardware_concurrency() << '\n';
+    if constexpr(DEBUG) clog << "Threads Allowed: " << thread::hardware_concurrency() << '\n';
     cout << "Computing Mandelbrot..." << '\n';
     go_compute_mandelbrot(Raylib, Mandelbrot);
 
@@ -226,19 +236,33 @@ int main() {
         if(rl::IsKeyPressed(rl::KEY_SPACE)) {
             DisplayMandelbrot = !DisplayMandelbrot;
         }
-        
 
         for(uint64_t X = 0; X < This->Screen.Width; ++X)
             for(uint64_t Y = 0; Y < This->Screen.Height; ++Y)
                 if(rl::Color MandelColor = Mandelbrot[X+Y*This->Screen.Width]; DisplayMandelbrot) {
                     rl::Color Pixel = Pixels[This->Screen.at(X,Y)];
                     rl::Color Blend = This->color_lerp(MandelColor, Pixel, 0.25f);
-                    rl::DrawPixel(X, Y, Blend);
+                    This->draw_pixel(X, Y, Blend);
                 }
-                else rl::DrawPixel(X, Y, Pixels[This->Screen.at(X,Y)]);
+                else This->draw_pixel(X, Y, Pixels[This->Screen.at(X,Y)]);
 
         rl::DrawFPS(10,10);
         string Str = "C == {" + to_string(real(Julia.Constant)) + " + " + to_string(imag(Julia.Constant)) + "i}";
         rl::DrawText(Str.c_str(), 10, 30, 20, rl::ORANGE);
     });
 }
+
+/*
+
+rl {
+    struct screen {
+        uint64_t Width;
+        uint64_t Height;
+        string Name;
+    };
+    struct engine {
+        engine(screen);
+    };
+};
+
+*/
