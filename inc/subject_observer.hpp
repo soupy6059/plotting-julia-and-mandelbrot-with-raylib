@@ -32,3 +32,20 @@ struct subject {
         return *this;
     }
 };
+
+#ifdef 0
+#include <string>
+struct display: observer {
+    virtual void handle(subject &From) override try {
+        using namespace std;
+        using enum subject::signal;
+        switch(From.Status.Signal) {
+        case PRINT_ME: {
+            string to_print = any_cast<string>(From.Status.Load);
+            cout << to_print << '\n';
+        }
+        default: break;
+        }
+    } catch(std::bad_cast &ex) {}
+};
+#endif
