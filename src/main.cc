@@ -101,7 +101,7 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
     using namespace std;
     constexpr uint64_t N = 1000;
     
-    binary_semaphore PushRight{1};
+    mutex PushRight;
     vector<thread> ComputePool(DrawingThreadCount);
     ComputePool.reserve(1920);
     atomic<uint64_t> Alive = ComputePool.size();
@@ -135,15 +135,14 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
                 const float Colour = static_cast<float>(K)/static_cast<float>(N);
                 Colours[Raylib.Screen.at(X,Y)] = Raylib.color_lerp(rl::DARKBLUE, rl::ORANGE, BetterGradient(Colour));
             }
-           if(Work >= WorkCapacity && SizeOfChunk > 3) {
+            if(Work >= WorkCapacity && SizeOfChunk > 3) {
+                lock_guard<mutex> Acquired{PushRight};
                 SizeOfChunk *= 2.f/3.f;
                 Alive.fetch_add(1, memory_order::relaxed);
-                PushRight.acquire();
                 ComputePool.push_back(thread{
-                    ComputeLine, Start + SizeOfChunk-1, SizeOfChunk/2.f+2
-                });
+                        ComputeLine, Start + SizeOfChunk-1, SizeOfChunk/2.f+2
+                        });
                 (ComputePool.end()-1)->detach();
-                PushRight.release();
                 Work = 0;
             }
         }
