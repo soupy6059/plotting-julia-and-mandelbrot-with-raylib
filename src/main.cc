@@ -39,12 +39,12 @@ namespace julia {
 };
 
 namespace rl_combat {
-    inline rl::Vector2 screen_to_graph(rl::Vector2 ScrPos) {
+    static inline rl::Vector2 screen_to_graph(rl::Vector2 ScrPos) {
         ScrPos = {ScrPos.x - screen::Width/2, ScrPos.y - screen::Height/2};
         ScrPos.y *= -1;
         return {ScrPos.x * 4.f/(float)screen::Width, ScrPos.y * 4.f/(float)screen::Height};
     }
-    inline rl::Vector2 graph_to_screen(rl::Vector2 GPos) {
+    static inline rl::Vector2 graph_to_screen(rl::Vector2 GPos) {
         GPos = {GPos.x * screen::Width/4, GPos.y * screen::Height/4};
         GPos = {GPos.x, GPos.y * -1};
         GPos = {GPos.x + screen::Width / 2, GPos.y + screen::Height / 2};
@@ -60,8 +60,8 @@ namespace rl_combat {
     }
 };
 
-std::binary_semaphore ComputingPixelJulia{1};
-auto go_compute_julia = [](cplx JuliaConstant, uint64_t DrawingThreadCount) {
+static std::binary_semaphore ComputingPixelJulia{1};
+static auto go_compute_julia = [](cplx JuliaConstant, uint64_t DrawingThreadCount) {
     using namespace std::complex_literals;
     using namespace std;
     
@@ -201,8 +201,8 @@ int main() {
                 else rl::DrawPixel(X, Y, julia::JuliaSet[screen::at(X,Y)]);
 
         rl::DrawFPS(10,10);
-        string Str = "C == {" + to_string(real(JuliaConstant)) + " + " + to_string(imag(JuliaConstant)) + "i}";
-        rl::DrawText(Str.c_str(), 10, 30, 20, rl::ORANGE);
+        //string Str = "C == {" + to_string(real(JuliaConstant)) + " + " + to_string(imag(JuliaConstant)) + "i}";
+        //rl::DrawText(Str.c_str(), 10, 30, 20, rl::ORANGE);
         rl::EndDrawing();
     }
 
