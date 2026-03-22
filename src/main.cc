@@ -31,6 +31,7 @@ namespace julia {
     std::thread Computation;
     static rl::Color JuliaSet[screen::Width*screen::Height];
     static rl::Color MandelbrotSet[screen::Width*screen::Height];
+    static cplx DestinationSet[screen::Width*screen::Height];
     constexpr uint64_t N = 1000;
     static auto Func = [](cplx C) -> func<cplx(cplx)> {
         return [C](cplx Z) -> cplx {
@@ -96,6 +97,7 @@ static auto go_compute_julia = [](cplx JuliaConstant, uint64_t DrawingThreadCoun
                 };
                 const float Colour = static_cast<float>(K)/static_cast<float>(julia::N);
                 julia::JuliaSet[screen::at(X,Y)] = rl_combat::color_lerp(rl::DARKBLUE, rl::ORANGE, BetterGradient(Colour));
+                julia::DestinationSet[screen::at(X,Y)] = Z;
 
                 if(Work >= WorkCapacity && SizeOfChunkX > 3 && rand()%2 && Alive.load(memory_order::acquire) < ThreadCountMax) {
                     SizeOfChunkX *= 2.f/3.f;
@@ -173,6 +175,7 @@ int main() {
     go_compute_mandelbrot();
 
     bool DisplayMandelbrot = true;
+    bool DisplayDestinationSet = false;
 
     cplx JuliaConstant = 0.;
     while(!rl::WindowShouldClose()) {
@@ -192,9 +195,12 @@ int main() {
         if(rl::IsKeyPressed(rl::KEY_SPACE)) {
             DisplayMandelbrot = !DisplayMandelbrot;
         }
+        if(rl::IsKeyPressed(rl::KEY_D)) {
+            DisplayDestinationSet = !DisplayDestinationSet;
+        }
 
         for(uint64_t X = 0; X < screen::Width; ++X)
-            for(uint64_t Y = 0; Y < screen::Height; ++Y)
+            for(uint64_t Y = 0; Y < screen::Height; ++Y) {
                 if(DisplayMandelbrot) {
                     rl::Color MandelColor = julia::MandelbrotSet[screen::at(X,Y)];
                     rl::Color JuliaColor = julia::JuliaSet[screen::at(X,Y)];
@@ -202,6 +208,12 @@ int main() {
                     rl::DrawPixel(X, Y, Blend);
                 }
                 else rl::DrawPixel(X, Y, julia::JuliaSet[screen::at(X,Y)]);
+                if(DisplayDestinationSet) {
+                    cplx Z = julia::DestinationSet[screen::at(X,Y)];
+                    rl::Vector2 ScreenPosOfZ = rl_combat::graph_to_screen({(float)real(Z),(float)imag(Z)});
+                    rl::DrawCircleV(ScreenPosOfZ, 10.f, rl::BLACK);
+                }
+            }
 
         rl::DrawFPS(10,10);
         //string Str = "C == {" + to_string(real(JuliaConstant)) + " + " + to_string(imag(JuliaConstant)) + "i}";
