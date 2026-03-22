@@ -1,4 +1,5 @@
 #include <iostream>
+#include <random>
 #include <cassert>
 #include <mutex>
 #include <functional>
@@ -65,24 +66,21 @@ static auto go_compute_julia = [](cplx JuliaConstant, uint64_t DrawingThreadCoun
     using namespace std::complex_literals;
     using namespace std;
     
-    mutex PushRight;
-    vector<thread> ComputePool(DrawingThreadCount);
-    ComputePool.reserve(1920);
-    atomic<uint64_t> Alive = ComputePool.size();
+    atomic<uint64_t> Alive = DrawingThreadCount;
+    uint64_t ThreadCountMax = 400;
 
-    uint64_t XsPerThread = screen::Width/ComputePool.size() + 1;
+    uint64_t XsPerThread = screen::Width/DrawingThreadCount + 1;
 
     counting_semaphore ComputeRights{thread::hardware_concurrency() - 2};
     auto JuliaFunc = julia::Func(JuliaConstant);
 
-    function<void(uint64_t,uint64_t)> ComputeLine; 
-    ComputeLine = [&,JuliaConstant,JuliaFunc](uint64_t Start, uint64_t SizeOfChunk) -> void {
+    function<void(uint64_t,uint64_t,uint64_t,uint64_t)> ComputeLine; 
+    ComputeLine = [&,JuliaConstant,JuliaFunc](uint64_t StartX, uint64_t StartY, uint64_t SizeOfChunkX, uint64_t SizeOfChunkY) -> void {
         ComputeRights.acquire();
         uint64_t Work = 0;
-        const uint64_t WorkCapacity = 1 << 21;
-        static_assert(WorkCapacity == 2097152);
-        for(uint64_t X = Start; X < SizeOfChunk + Start && X < screen::Width; ++X) {
-            for(uint64_t Y = 0; Y < screen::Height; ++Y) {
+        const uint64_t WorkCapacity = 1 << 20; // defualt == 1 << 21
+        for(uint64_t X = StartX; X < SizeOfChunkX + StartX && X < screen::Width; ++X) {
+            for(uint64_t Y = StartY; Y < SizeOfChunkY + StartY && Y < screen::Height; ++Y) {
                 rl::Vector2 GraphCord = rl_combat::screen_to_graph({(float)X,(float)Y});
                 cplx Z {(double)GraphCord.x, (double)GraphCord.y};
                 uint64_t K = 0;
@@ -98,14 +96,18 @@ static auto go_compute_julia = [](cplx JuliaConstant, uint64_t DrawingThreadCoun
                 };
                 const float Colour = static_cast<float>(K)/static_cast<float>(julia::N);
                 julia::JuliaSet[screen::at(X,Y)] = rl_combat::color_lerp(rl::DARKBLUE, rl::ORANGE, BetterGradient(Colour));
-            }
-            if(Work >= WorkCapacity && SizeOfChunk > 3) {
-                lock_guard<mutex> Acquired{PushRight};
-                SizeOfChunk *= 2.f/3.f;
-                Alive.fetch_add(1, memory_order::relaxed);
-                ComputePool.push_back(thread{ComputeLine, Start + SizeOfChunk-1, SizeOfChunk/2.f+2});
-                (ComputePool.end()-1)->detach();
-                Work = 0;
+
+                if(Work >= WorkCapacity && SizeOfChunkX > 3 && rand()%2 && Alive.load(memory_order::acquire) < ThreadCountMax) {
+                    SizeOfChunkX *= 2.f/3.f;
+                    Alive.fetch_add(1, memory_order::relaxed);
+                    thread{ComputeLine, StartX + SizeOfChunkX-1, StartY, SizeOfChunkX/2.f+2, SizeOfChunkY}.detach();
+                    Work = 0;
+                } else if(Work >= WorkCapacity && SizeOfChunkY > 3 && Alive.load(memory_order::acquire) < ThreadCountMax) {
+                    SizeOfChunkY *= 2.f/3.f;
+                    Alive.fetch_add(1, memory_order::relaxed);
+                    thread{ComputeLine, StartX, StartY + SizeOfChunkY-1, SizeOfChunkX, SizeOfChunkY/2.f+2}.detach();
+                    Work = 0;
+                }
             }
         }
         if constexpr(DEBUG) if(Work >= WorkCapacity) clog << "Thread " << this_thread::get_id() << " did " << Work << " work\n";
@@ -113,9 +115,8 @@ static auto go_compute_julia = [](cplx JuliaConstant, uint64_t DrawingThreadCoun
         ComputeRights.release();
     };
 
-    for(uint64_t InitThread = 0; InitThread < ComputePool.size(); ++InitThread) {
-        ComputePool.at(InitThread) = thread{ ComputeLine, InitThread*XsPerThread, XsPerThread };
-        ComputePool.at(InitThread).detach();
+    for(uint64_t InitThread = 0; InitThread < DrawingThreadCount; ++InitThread) {
+        thread{ ComputeLine, InitThread*XsPerThread, 0, XsPerThread, screen::Height}.detach();
     }
 
     uint64_t Old = Alive.load(memory_order::acquire);
@@ -161,6 +162,8 @@ inline void go_compute_mandelbrot() {
 int main() {
     using namespace std;
     using namespace std::complex_literals;
+
+    srand(time(NULL));
 
     rl::InitWindow(screen::Width, screen::Height, screen::Name);
     rl::SetTargetFPS(15);
