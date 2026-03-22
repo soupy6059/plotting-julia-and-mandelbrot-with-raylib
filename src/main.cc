@@ -15,59 +15,41 @@
 #define DEBUG 0
 #endif
 
-struct raylib {
-    struct screen {
-        uint64_t Width; 
-        uint64_t Height;
-        std::string Name;
-        inline uint64_t at(uint64_t X, uint64_t Y) {
-            return X + Width * Y;
-        }
-    } Screen;
-    
-    enum thread_name : uint64_t {
-        JuliaPixel
+namespace screen {
+    constexpr const uint64_t Width = 1000;
+    constexpr const uint64_t Height = 1000;
+    constexpr const char *const Name = "Julia Plotting";
+    static inline uint64_t at(uint64_t X, uint64_t Y) {
+        return X + Width * Y;
+    }
+};
+
+using cplx = std::complex<double>;
+template<typename type> using func = std::function<type>;
+namespace julia {
+    std::thread Computation;
+    static rl::Color JuliaSet[screen::Width*screen::Height];
+    static rl::Color MandelbrotSet[screen::Width*screen::Height];
+    constexpr uint64_t N = 1000;
+    static auto Func = [](cplx C) -> func<cplx(cplx)> {
+        return [C](cplx Z) -> cplx {
+            return std::pow(Z, cplx{2.0}) + C;
+        };
     };
-    std::array<std::thread,1> Pool;
-    raylib(screen Screen): Screen{Screen} {
-        rl::InitWindow(Screen.Width, Screen.Height, Screen.Name.c_str());
-    }
-    raylib &set_target_FPS(uint64_t FPS) {
-        rl::SetTargetFPS(FPS);
-        return *this;
-    }
-    static constexpr uint64_t CLEARBACKGROUND = (1 << 0);
-    raylib &draw(std::function<void(raylib*)> fn, uint64_t OPTIONS = CLEARBACKGROUND) {
-        while(!rl::WindowShouldClose()) {
-            rl::BeginDrawing();
-                if(OPTIONS & CLEARBACKGROUND) rl::ClearBackground(rl::RAYWHITE);
-                fn(this);
-            rl::EndDrawing();
-        } 
-        for(std::thread &Thread: Pool) Thread.join();
-        return *this;
-    }
-    ~raylib() {
-        rl::CloseWindow();
-    }
-    void draw_pixel(rl::Vector2 Z, rl::Color Colour) {
-        Z = {Z.x * Screen.Width/4, Z.y * Screen.Height/4};
-        Z = {Z.x, Z.y * -1};
-        Z = {Z.x + Screen.Width / 2, Z.y + Screen.Height / 2};
-        rl::DrawPixelV(Z, Colour);
-    }
-    rl::Vector2 screen_to_graph(rl::Vector2 ScrPos) {
-        ScrPos = {ScrPos.x - Screen.Width/2, ScrPos.y - Screen.Height/2};
+};
+
+namespace rl_combat {
+    inline rl::Vector2 screen_to_graph(rl::Vector2 ScrPos) {
+        ScrPos = {ScrPos.x - screen::Width/2, ScrPos.y - screen::Height/2};
         ScrPos.y *= -1;
-        return {ScrPos.x * 4.f/(float)Screen.Width, ScrPos.y * 4.f/(float)Screen.Height};
+        return {ScrPos.x * 4.f/(float)screen::Width, ScrPos.y * 4.f/(float)screen::Height};
     }
-    rl::Vector2 graph_to_screen(rl::Vector2 GPos) {
-        GPos = {GPos.x * Screen.Width/4, GPos.y * Screen.Height/4};
+    inline rl::Vector2 graph_to_screen(rl::Vector2 GPos) {
+        GPos = {GPos.x * screen::Width/4, GPos.y * screen::Height/4};
         GPos = {GPos.x, GPos.y * -1};
-        GPos = {GPos.x + Screen.Width / 2, GPos.y + Screen.Height / 2};
+        GPos = {GPos.x + screen::Width / 2, GPos.y + screen::Height / 2};
         return GPos;
     }
-
     static inline rl::Color color_lerp(rl::Color Src, rl::Color Dest, float Reduct) {
         rl::Color Color = {0};
         Color.r = Reduct * Dest.r + (1.f-Reduct) * Src.r;
@@ -76,53 +58,35 @@ struct raylib {
         Color.a = 255;
         return Color;
     }
-    inline raylib &draw_pixel(uint64_t X, uint64_t Y, rl::Color Color) {
-        if constexpr(DEBUG) {
-            if(X > Screen.Width) assert(false && "BAD DIMENSIONS");
-            if(Y > Screen.Height) assert(false && "BAD DIMENSIONS");
-        }
-        rl::DrawPixel(X,Y,Color);
-        return *this;
-    }
-};
-
-using cplx = std::complex<double>;
-template<typename type> using func = std::function<type>;
-
-static auto julia = [](cplx C) -> func<cplx(cplx)> {
-    return [C](cplx Z) -> cplx {
-        return std::pow(Z, cplx{2.0}) + C;
-    };
 };
 
 std::binary_semaphore ComputingPixelJulia{1};
-inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colours, cplx JuliaConstant, uint64_t DrawingThreadCount) {
+auto go_compute_julia = [](cplx JuliaConstant, uint64_t DrawingThreadCount) {
     using namespace std::complex_literals;
     using namespace std;
-    constexpr uint64_t N = 1000;
     
     mutex PushRight;
     vector<thread> ComputePool(DrawingThreadCount);
     ComputePool.reserve(1920);
     atomic<uint64_t> Alive = ComputePool.size();
 
-    uint64_t XsPerThread = Raylib.Screen.Width/ComputePool.size() + 1;
+    uint64_t XsPerThread = screen::Width/ComputePool.size() + 1;
 
     counting_semaphore ComputeRights{thread::hardware_concurrency() - 2};
-    auto JuliaFunc = julia(JuliaConstant);
+    auto JuliaFunc = julia::Func(JuliaConstant);
 
     function<void(uint64_t,uint64_t)> ComputeLine; 
-    ComputeLine = [&,JuliaFunc](uint64_t Start, uint64_t SizeOfChunk) -> void {
+    ComputeLine = [&,JuliaConstant,JuliaFunc](uint64_t Start, uint64_t SizeOfChunk) -> void {
         ComputeRights.acquire();
         uint64_t Work = 0;
         const uint64_t WorkCapacity = 1 << 21;
         static_assert(WorkCapacity == 2097152);
-        for(uint64_t X = Start; X < SizeOfChunk + Start && X < Raylib.Screen.Width; ++X) {
-            for(uint64_t Y = 0; Y < Raylib.Screen.Height; ++Y) {
-                rl::Vector2 GraphCord = Raylib.screen_to_graph({(float)X,(float)Y});
+        for(uint64_t X = Start; X < SizeOfChunk + Start && X < screen::Width; ++X) {
+            for(uint64_t Y = 0; Y < screen::Height; ++Y) {
+                rl::Vector2 GraphCord = rl_combat::screen_to_graph({(float)X,(float)Y});
                 cplx Z {(double)GraphCord.x, (double)GraphCord.y};
                 uint64_t K = 0;
-                for(; K < N; ++K) {
+                for(; K < julia::N; ++K) {
                     if(abs(Z) >= abs(JuliaConstant)+1.) break;
                     Z = JuliaFunc(Z);
                     ++Work;
@@ -132,8 +96,8 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
                         1./(1.+exp(-10.*(Factor-0.25)))
                     );
                 };
-                const float Colour = static_cast<float>(K)/static_cast<float>(N);
-                Colours[Raylib.Screen.at(X,Y)] = Raylib.color_lerp(rl::DARKBLUE, rl::ORANGE, BetterGradient(Colour));
+                const float Colour = static_cast<float>(K)/static_cast<float>(julia::N);
+                julia::JuliaSet[screen::at(X,Y)] = rl_combat::color_lerp(rl::DARKBLUE, rl::ORANGE, BetterGradient(Colour));
             }
             if(Work >= WorkCapacity && SizeOfChunk > 3) {
                 lock_guard<mutex> Acquired{PushRight};
@@ -161,35 +125,34 @@ inline auto go_compute_pixel_julia(raylib &Raylib, std::vector<rl::Color> &Colou
     }
 
     ComputingPixelJulia.release();
-}
+};
 
-void go_compute_mandelbrot(raylib &Raylib, std::vector<rl::Color> &Colours) {
+inline void go_compute_mandelbrot() {
     using namespace std::complex_literals;
     using namespace std;
-    constexpr uint64_t N = 1000;
 
     vector<thread> ChunkLoader(thread::hardware_concurrency()-2);
-    uint64_t ChunkSize = Raylib.Screen.Width/ChunkLoader.size() + 1;
+    uint64_t ChunkSize = screen::Width/ChunkLoader.size() + 1;
 
-    auto ChunkLoad = [=](raylib &Raylib, vector<rl::Color> &Colours, uint64_t Chunk) -> void {
+    auto ChunkLoad = [ChunkSize](uint64_t Chunk) -> void {
         const uint64_t ChunkStart = ChunkSize * Chunk;
-        for(uint64_t X = ChunkStart; X < ChunkStart + ChunkSize && X < Raylib.Screen.Width; ++X) {
-            for(uint64_t Y = 0; Y < Raylib.Screen.Height; ++Y) {
-                rl::Vector2 GraphCord = Raylib.screen_to_graph({(float)X,(float)Y});
+        for(uint64_t X = ChunkStart; X < ChunkStart + ChunkSize && X < screen::Width; ++X) {
+            for(uint64_t Y = 0; Y < screen::Height; ++Y) {
+                rl::Vector2 GraphCord = rl_combat::screen_to_graph({(float)X,(float)Y});
                 cplx C = (double)GraphCord.x + (double)GraphCord.y*1.0i;
                 cplx Z = 0.+0.i;
                 uint64_t K = 0;
-                for(; K < N; ++K) {
+                for(; K < julia::N; ++K) {
                     if(abs(Z) >= 2.) break;
-                    Z = julia(C)(Z);
+                    Z = julia::Func(C)(Z);
                 }
-                Colours[Raylib.Screen.at(X,Y)] = Raylib.color_lerp(rl::RAYWHITE, rl::RED, (float)K/(float)N);
+                julia::MandelbrotSet[screen::at(X,Y)] = rl_combat::color_lerp(rl::RAYWHITE, rl::RED, (float)K/(float)julia::N);
             }
         }
     };
 
     for(uint64_t Chunk = 0; Chunk < ChunkLoader.size(); ++Chunk) {
-        ChunkLoader.at(Chunk) = thread{ChunkLoad, ref(Raylib), ref(Colours), Chunk};
+        ChunkLoader.at(Chunk) = thread{ChunkLoad, Chunk};
     }
 
     for(thread &Chunk: ChunkLoader) Chunk.join();
@@ -199,34 +162,27 @@ int main() {
     using namespace std;
     using namespace std::complex_literals;
 
-    struct {func<cplx(cplx)> fn; cplx Constant; } Julia = {nullptr, -1.};
-    Julia.fn = julia(Julia.Constant);
+    rl::InitWindow(screen::Width, screen::Height, screen::Name);
+    rl::SetTargetFPS(15);
 
-    raylib Raylib {{1000,1000,"Julia"}};
-    Raylib.set_target_FPS(15);
-
-    vector<rl::Color> Pixels(Raylib.Screen.Width*Raylib.Screen.Height);
-    auto GoComputeJulia = [](raylib &Raylib, decltype(Pixels) &Pixels, cplx &Constant) -> void {
-        go_compute_pixel_julia(Raylib, Pixels, Constant, 100);
-    };
-
-    vector<rl::Color> Mandelbrot(Raylib.Screen.Width*Raylib.Screen.Height);
     if constexpr(DEBUG) clog << "Threads Allowed: " << thread::hardware_concurrency() << '\n';
     cout << "Computing Mandelbrot..." << '\n';
-    go_compute_mandelbrot(Raylib, Mandelbrot);
+    go_compute_mandelbrot();
 
     bool DisplayMandelbrot = true;
 
-    Raylib.draw([&](raylib *This) {
+    cplx JuliaConstant = 0.;
+    while(!rl::WindowShouldClose()) {
+        rl::ClearBackground(rl::RAYWHITE);
+        rl::BeginDrawing();
         if(rl::IsMouseButtonDown(rl::MOUSE_BUTTON_LEFT)) {
             rl::Vector2 MousePos = rl::GetMousePosition();
-            MousePos = This->screen_to_graph(MousePos);
-            Julia.Constant = cplx{(double)MousePos.x + ((double)MousePos.y)*1.i};
+            MousePos = rl_combat::screen_to_graph(MousePos);
+            JuliaConstant = cplx{(double)MousePos.x + ((double)MousePos.y)*1.i};
 
             if(ComputingPixelJulia.try_acquire()) {
-                using enum raylib::thread_name;
-                if(thread &Thrd = This->Pool.at(JuliaPixel); Thrd.joinable()) Thrd.join();
-                This->Pool.at(JuliaPixel) = thread{GoComputeJulia, ref(*This), ref(Pixels), ref(Julia.Constant)};
+                if(thread &Thrd = julia::Computation; Thrd.joinable()) Thrd.join();
+                julia::Computation = thread{go_compute_julia, JuliaConstant, 100};
             }
         }
 
@@ -234,17 +190,22 @@ int main() {
             DisplayMandelbrot = !DisplayMandelbrot;
         }
 
-        for(uint64_t X = 0; X < This->Screen.Width; ++X)
-            for(uint64_t Y = 0; Y < This->Screen.Height; ++Y)
-                if(rl::Color MandelColor = Mandelbrot[X+Y*This->Screen.Width]; DisplayMandelbrot) {
-                    rl::Color Pixel = Pixels[This->Screen.at(X,Y)];
-                    rl::Color Blend = This->color_lerp(MandelColor, Pixel, 0.25f);
-                    This->draw_pixel(X, Y, Blend);
+        for(uint64_t X = 0; X < screen::Width; ++X)
+            for(uint64_t Y = 0; Y < screen::Height; ++Y)
+                if(DisplayMandelbrot) {
+                    rl::Color MandelColor = julia::MandelbrotSet[screen::at(X,Y)];
+                    rl::Color JuliaColor = julia::JuliaSet[screen::at(X,Y)];
+                    rl::Color Blend = rl_combat::color_lerp(MandelColor, JuliaColor, 0.25f);
+                    rl::DrawPixel(X, Y, Blend);
                 }
-                else This->draw_pixel(X, Y, Pixels[This->Screen.at(X,Y)]);
+                else rl::DrawPixel(X, Y, julia::JuliaSet[screen::at(X,Y)]);
 
         rl::DrawFPS(10,10);
-        string Str = "C == {" + to_string(real(Julia.Constant)) + " + " + to_string(imag(Julia.Constant)) + "i}";
+        string Str = "C == {" + to_string(real(JuliaConstant)) + " + " + to_string(imag(JuliaConstant)) + "i}";
         rl::DrawText(Str.c_str(), 10, 30, 20, rl::ORANGE);
-    });
+        rl::EndDrawing();
+    }
+
+    julia::Computation.join();
+    rl::CloseWindow();
 }
