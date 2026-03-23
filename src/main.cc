@@ -35,7 +35,7 @@ namespace julia {
     constexpr uint64_t N = 1000;
     static auto Func = [](cplx C) -> func<cplx(cplx)> {
         return [C](cplx Z) -> cplx {
-            return std::pow(Z, cplx{2.0}) + C;
+            return std::pow(Z, cplx{5.0}) + C;
         };
     };
 };
@@ -68,36 +68,39 @@ static auto go_compute_julia = [](cplx JuliaConstant, uint64_t DrawingThreadCoun
     using namespace std;
     
     atomic<uint64_t> Alive = DrawingThreadCount;
-    uint64_t ThreadCountMax = 400;
+    uint64_t ThreadCountMax = 1 << 10;
 
     uint64_t XsPerThread = screen::Width/DrawingThreadCount + 1;
 
     counting_semaphore ComputeRights{thread::hardware_concurrency() - 2};
     auto JuliaFunc = julia::Func(JuliaConstant);
 
+    double EscapeRadius = pow( (1. + sqrt(1 + 4.*abs(JuliaConstant)))/2., 2.0);
+
     function<void(uint64_t,uint64_t,uint64_t,uint64_t)> ComputeLine; 
     ComputeLine = [&,JuliaConstant,JuliaFunc](uint64_t StartX, uint64_t StartY, uint64_t SizeOfChunkX, uint64_t SizeOfChunkY) -> void {
         ComputeRights.acquire();
         uint64_t Work = 0;
-        const uint64_t WorkCapacity = 1 << 20; // defualt == 1 << 21
+        const uint64_t WorkCapacity = 1 << 21; // defualt == 1 << 21
         for(uint64_t X = StartX; X < SizeOfChunkX + StartX && X < screen::Width; ++X) {
             for(uint64_t Y = StartY; Y < SizeOfChunkY + StartY && Y < screen::Height; ++Y) {
                 rl::Vector2 GraphCord = rl_combat::screen_to_graph({(float)X,(float)Y});
                 cplx Z {(double)GraphCord.x, (double)GraphCord.y};
                 uint64_t K = 0;
                 for(; K < julia::N; ++K) {
-                    if(abs(Z) >= abs(JuliaConstant)+1.) break;
+                    if(norm(Z) >= EscapeRadius) break;
                     Z = JuliaFunc(Z);
                     ++Work;
                 }
-                constexpr const auto BetterGradient = [](double Factor) -> float {
+                constexpr const auto BetterGradient [[maybe_unused]] = [](double Factor) -> float {
                     return static_cast<float>(
                         1./(1.+exp(-10.*(Factor-0.25)))
                     );
                 };
+                constexpr const auto BetterGradient2 [[maybe_unused]] = [](double Factor) -> float { return pow(Factor, 0.2); };
                 const float Colour = static_cast<float>(K)/static_cast<float>(julia::N);
-                julia::JuliaSet[screen::at(X,Y)] = rl_combat::color_lerp(rl::DARKBLUE, rl::ORANGE, BetterGradient(Colour));
-                julia::DestinationSet[screen::at(X,Y)] = Z;
+                julia::JuliaSet[screen::at(X,Y)] = rl_combat::color_lerp(rl::DARKBLUE, rl::ORANGE, BetterGradient2(Colour));
+                julia::DestinationSet[screen::at(X,Y)] = move(Z);
 
                 if(Work >= WorkCapacity && SizeOfChunkX > 3 && rand()%2 && Alive.load(memory_order::acquire) < ThreadCountMax) {
                     SizeOfChunkX *= 2.f/3.f;
@@ -188,7 +191,7 @@ int main() {
 
             if(ComputingPixelJulia.try_acquire()) {
                 if(thread &Thrd = julia::Computation; Thrd.joinable()) Thrd.join();
-                julia::Computation = thread{go_compute_julia, JuliaConstant, 100};
+                julia::Computation = thread{go_compute_julia, JuliaConstant, thread::hardware_concurrency() - 2};
             }
         }
 
