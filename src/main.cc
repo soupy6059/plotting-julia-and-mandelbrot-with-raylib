@@ -59,10 +59,14 @@ namespace rl_combat {
         Color.a = 255;
         return Color;
     }
+    constexpr auto cplx_to_graph(cplx Z) -> rl::Vector2 {
+        return rl_combat::graph_to_screen({(float)real(Z),(float)imag(Z)});
+    };
 };
 
-constinit static std::binary_semaphore ComputingPixelJulia{1};
+static std::binary_semaphore ComputingPixelJulia{1};
 constinit static std::atomic<uint64_t> Alive = 0;
+constinit thread_local bool SplitHorizontally = true;
 constexpr static auto go_compute_julia = [](cplx JuliaConstant, uint64_t DrawingThreadCount) {
     using namespace std::placeholders;
     using namespace std::complex_literals;
@@ -103,16 +107,18 @@ constexpr static auto go_compute_julia = [](cplx JuliaConstant, uint64_t Drawing
                 julia::JuliaSet[screen::at(X,Y)] = rl_combat::color_lerp(rl::DARKBLUE, rl::ORANGE, BetterGradient2(Colour));
                 julia::DestinationSet[screen::at(X,Y)] = move(Z);
 
-                if(Work >= WorkCapacity && SizeOfChunkX > 3 && rand()%2 && Alive.load(memory_order::acquire) < ThreadCountMax) {
+                if(!SplitHorizontally && Work >= WorkCapacity && SizeOfChunkX > 3 && Alive.load(memory_order::acquire) < ThreadCountMax) {
                     SizeOfChunkX *= 2.f/3.f;
                     Alive.fetch_add(1, memory_order::relaxed);
                     thread{ComputeLine, StartX + SizeOfChunkX-1, StartY, SizeOfChunkX/2.f+2, SizeOfChunkY}.detach();
                     Work = 0;
+                    SplitHorizontally = !SplitHorizontally;
                 } else if(Work >= WorkCapacity && SizeOfChunkY > 3 && Alive.load(memory_order::acquire) < ThreadCountMax) {
                     SizeOfChunkY *= 2.f/3.f;
                     Alive.fetch_add(1, memory_order::relaxed);
                     thread{ComputeLine, StartX, StartY + SizeOfChunkY-1, SizeOfChunkX, SizeOfChunkY/2.f+2}.detach();
                     Work = 0;
+                    SplitHorizontally = !SplitHorizontally;
                 }
             }
         }
@@ -211,21 +217,14 @@ int main() {
                     rl::DrawPixel(X, Y, Blend);
                 }
                 else rl::DrawPixel(X, Y, julia::JuliaSet[screen::at(X,Y)]);
-                if(DisplayDestinationSet) {
-                    cplx Z = julia::DestinationSet[screen::at(X,Y)];
-                    rl::Vector2 ScreenPosOfZ = rl_combat::graph_to_screen({(float)real(Z),(float)imag(Z)});
-                    rl::DrawCircleV(ScreenPosOfZ, 10.f, rl::BLACK);
-                }
+                if(DisplayDestinationSet)
+                    rl::DrawCircleV(rl_combat::cplx_to_graph(julia::DestinationSet[screen::at(X,Y)]), 10.f, rl::BLACK);
             }
 
         rl::DrawFPS(10,10);
 
         // Pretty Printing
         {
-            constexpr auto CplxToGraph = [](cplx Z) -> rl::Vector2 {
-                return rl_combat::graph_to_screen({(float)real(Z),(float)imag(Z)});
-
-            };
             string Str = "C == {" + to_string(real(JuliaConstant)) + " + " + to_string(imag(JuliaConstant)) + "i}";
             rl::DrawText(Str.c_str(), 10, 30, 20, rl::ORANGE);
 
