@@ -28,7 +28,6 @@ namespace screen {
 using cplx = std::complex<double>;
 template<typename type> using func = std::function<type>;
 namespace julia {
-    thread_local std::thread Computation;
     static rl::Color JuliaSet[screen::Width*screen::Height];
     static rl::Color MandelbrotSet[screen::Width*screen::Height];
     static cplx DestinationSet[screen::Width*screen::Height];
@@ -62,21 +61,22 @@ namespace rl_combat {
     }
 };
 
-static std::binary_semaphore ComputingPixelJulia{1};
+constinit static std::binary_semaphore ComputingPixelJulia{1};
+constinit static std::atomic<uint64_t> Alive = 0;
 constexpr static auto go_compute_julia = [](cplx JuliaConstant, uint64_t DrawingThreadCount) {
     using namespace std::placeholders;
     using namespace std::complex_literals;
     using namespace std;
     
-    atomic<uint64_t> Alive = DrawingThreadCount;
     constexpr uint64_t ThreadCountMax = 1 << 10;
 
     uint64_t XsPerThread = screen::Width/DrawingThreadCount + 1;
+    Alive.fetch_add(DrawingThreadCount, memory_order::relaxed);
 
     counting_semaphore ComputeRights{thread::hardware_concurrency() - 2};
     auto JuliaFunc = julia::Func(JuliaConstant);
 
-    double EscapeRadius = pow( (1. + sqrt(1 + 4.*abs(JuliaConstant)))/2., 2.0);
+    double EscapeRadius = pow((1. + sqrt(1 + 4.*abs(JuliaConstant)))/2., 2.0);
 
     function<void(uint64_t,uint64_t,uint64_t,uint64_t)> ComputeLine; 
     ComputeLine = [&,JuliaConstant,JuliaFunc](uint64_t StartX, uint64_t StartY, uint64_t SizeOfChunkX, uint64_t SizeOfChunkY) -> void {
@@ -191,8 +191,7 @@ int main() {
             JuliaConstant = cplx{(double)MousePos.x + ((double)MousePos.y)*1.i};
 
             if(ComputingPixelJulia.try_acquire()) {
-                if(thread &Thrd = julia::Computation; Thrd.joinable()) Thrd.join();
-                julia::Computation = thread{go_compute_julia, JuliaConstant, thread::hardware_concurrency() - 2};
+                thread{go_compute_julia, JuliaConstant, thread::hardware_concurrency() - 2}.detach();
             }
         }
 
@@ -230,15 +229,20 @@ int main() {
             string Str = "C == {" + to_string(real(JuliaConstant)) + " + " + to_string(imag(JuliaConstant)) + "i}";
             rl::DrawText(Str.c_str(), 10, 30, 20, rl::ORANGE);
 
-            cplx FixedPoint = (1.-sqrt(1.-4.*JuliaConstant))/2.;
-            rl::DrawCircleV(CplxToGraph(FixedPoint), 5.f, rl::BLACK);
-            rl::DrawCircleV(CplxToGraph(conj(FixedPoint)), 5.f, rl::BLACK);
-            rl::DrawCircleV(CplxToGraph(-real(FixedPoint) + 1.i * imag(FixedPoint)), 5.f, rl::BLACK);
+            // cplx FixedPoint = (1.-sqrt(1.-4.*JuliaConstant))/2.;
+            // rl::DrawCircleV(CplxToGraph(FixedPoint), 5.f, rl::BLACK);
+            // rl::DrawCircleV(CplxToGraph(conj(FixedPoint)), 5.f, rl::BLACK);
+            // rl::DrawCircleV(CplxToGraph(-real(FixedPoint) + 1.i * imag(FixedPoint)), 5.f, rl::BLACK);
+        }
+        // Pretty Printing DEBUG
+        if constexpr(DEBUG) {
+            rl::DrawText(
+                ("Alive == " + to_string(Alive.load(memory_order::acquire))).c_str(),
+            10, 50, 20, rl::ORANGE);
         }
 
         rl::EndDrawing();
     }
 
-    if(julia::Computation.joinable()) julia::Computation.join();
     rl::CloseWindow();
 }
