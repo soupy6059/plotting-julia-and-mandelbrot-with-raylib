@@ -28,7 +28,7 @@ namespace screen {
 using cplx = std::complex<double>;
 template<typename type> using func = std::function<type>;
 namespace julia {
-    std::thread Computation;
+    thread_local std::thread Computation;
     static rl::Color JuliaSet[screen::Width*screen::Height];
     static rl::Color MandelbrotSet[screen::Width*screen::Height];
     static cplx DestinationSet[screen::Width*screen::Height];
