@@ -224,6 +224,6 @@ int main() {
         rl::EndDrawing();
     }
 
-    julia::Computation.join();
+    if(julia::Computation.joinable()) julia::Computation.join();
     rl::CloseWindow();
 }
