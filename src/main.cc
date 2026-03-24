@@ -75,6 +75,7 @@ constexpr static auto go_compute_julia = [](cplx JuliaConstant, uint64_t Drawing
     constexpr uint64_t ThreadCountMax = 1 << 10;
 
     uint64_t XsPerThread = screen::Width/DrawingThreadCount + 1;
+    if constexpr(DEBUG) assert(!Alive.load(memory_order::acquire));
     Alive.fetch_add(DrawingThreadCount, memory_order::relaxed);
 
     counting_semaphore ComputeRights{thread::hardware_concurrency() - 2};
