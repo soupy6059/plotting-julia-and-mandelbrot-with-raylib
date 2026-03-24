@@ -35,7 +35,7 @@ namespace julia {
     constexpr uint64_t N = 1000;
     static auto Func = [](cplx C) -> func<cplx(cplx)> {
         return [C](cplx Z) -> cplx {
-            return std::pow(Z, cplx{5.0}) + C;
+            return std::pow(Z, cplx{2.0}) + C;
         };
     };
 };
@@ -63,12 +63,13 @@ namespace rl_combat {
 };
 
 static std::binary_semaphore ComputingPixelJulia{1};
-static auto go_compute_julia = [](cplx JuliaConstant, uint64_t DrawingThreadCount) {
+constexpr static auto go_compute_julia = [](cplx JuliaConstant, uint64_t DrawingThreadCount) {
+    using namespace std::placeholders;
     using namespace std::complex_literals;
     using namespace std;
     
     atomic<uint64_t> Alive = DrawingThreadCount;
-    uint64_t ThreadCountMax = 1 << 10;
+    constexpr uint64_t ThreadCountMax = 1 << 10;
 
     uint64_t XsPerThread = screen::Width/DrawingThreadCount + 1;
 
@@ -81,7 +82,7 @@ static auto go_compute_julia = [](cplx JuliaConstant, uint64_t DrawingThreadCoun
     ComputeLine = [&,JuliaConstant,JuliaFunc](uint64_t StartX, uint64_t StartY, uint64_t SizeOfChunkX, uint64_t SizeOfChunkY) -> void {
         ComputeRights.acquire();
         uint64_t Work = 0;
-        const uint64_t WorkCapacity = 1 << 21; // defualt == 1 << 21
+        constexpr static uint64_t WorkCapacity = 1 << 21; // defualt == 1 << 21
         for(uint64_t X = StartX; X < SizeOfChunkX + StartX && X < screen::Width; ++X) {
             for(uint64_t Y = StartY; Y < SizeOfChunkY + StartY && Y < screen::Height; ++Y) {
                 rl::Vector2 GraphCord = rl_combat::screen_to_graph({(float)X,(float)Y});
@@ -92,12 +93,12 @@ static auto go_compute_julia = [](cplx JuliaConstant, uint64_t DrawingThreadCoun
                     Z = JuliaFunc(Z);
                     ++Work;
                 }
-                constexpr const auto BetterGradient [[maybe_unused]] = [](double Factor) -> float {
+                constexpr static auto BetterGradient [[maybe_unused]] = [](double Factor) -> float {
                     return static_cast<float>(
                         1./(1.+exp(-10.*(Factor-0.25)))
                     );
                 };
-                constexpr const auto BetterGradient2 [[maybe_unused]] = [](double Factor) -> float { return pow(Factor, 0.2); };
+                constexpr static auto BetterGradient2 [[maybe_unused]] = [](double Factor) -> float { return pow(Factor, 0.2); };
                 const float Colour = static_cast<float>(K)/static_cast<float>(julia::N);
                 julia::JuliaSet[screen::at(X,Y)] = rl_combat::color_lerp(rl::DARKBLUE, rl::ORANGE, BetterGradient2(Colour));
                 julia::DestinationSet[screen::at(X,Y)] = move(Z);
@@ -219,8 +220,22 @@ int main() {
             }
 
         rl::DrawFPS(10,10);
-        //string Str = "C == {" + to_string(real(JuliaConstant)) + " + " + to_string(imag(JuliaConstant)) + "i}";
-        //rl::DrawText(Str.c_str(), 10, 30, 20, rl::ORANGE);
+
+        // Pretty Printing
+        {
+            constexpr auto CplxToGraph = [](cplx Z) -> rl::Vector2 {
+                return rl_combat::graph_to_screen({(float)real(Z),(float)imag(Z)});
+
+            };
+            string Str = "C == {" + to_string(real(JuliaConstant)) + " + " + to_string(imag(JuliaConstant)) + "i}";
+            rl::DrawText(Str.c_str(), 10, 30, 20, rl::ORANGE);
+
+            cplx FixedPoint = (1.-sqrt(1.-4.*JuliaConstant))/2.;
+            rl::DrawCircleV(CplxToGraph(FixedPoint), 5.f, rl::BLACK);
+            rl::DrawCircleV(CplxToGraph(conj(FixedPoint)), 5.f, rl::BLACK);
+            rl::DrawCircleV(CplxToGraph(-real(FixedPoint) + 1.i * imag(FixedPoint)), 5.f, rl::BLACK);
+        }
+
         rl::EndDrawing();
     }
 
