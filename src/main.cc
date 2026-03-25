@@ -20,6 +20,30 @@ namespace core {
     template<typename U> constexpr U implicit_cast(typename std::type_identity<U>::type Thing) {
         return Thing;
     }
+    struct r2 {
+        double X, Y;
+        constexpr r2(double X, double Y): X{X}, Y{Y} {}
+        constexpr r2(const r2&) = default;
+        constexpr r2 &operator=(const core::r2&) = default;
+        r2 operator+(r2 &Other) {
+            return {X + Other.X, Y + Other.Y};
+        }
+        r2 operator-(r2 &Other) {
+            return {X - Other.X, Y - Other.Y};
+        }
+        r2 operator*(double &Other) {
+            return {X * Other, Y * Other};
+        }
+        #ifdef RAYLIB
+        r2(rl::Vector2 RayVec): X{implicit_cast<double>(RayVec.x)}, Y{implicit_cast<double>(RayVec.y)} {}
+        operator rl::Vector2() {
+            return {implicit_cast<float>(X), implicit_cast<float>(Y)};
+        }
+        #endif
+    };
+    r2 operator*(double Other, r2 &Vec) {
+        return {Other*Vec.X,Other*Vec.Y};
+    }
 };
 
 namespace screen {
@@ -51,10 +75,21 @@ namespace rl_combat {
         ScrPos.y *= -1;
         return {ScrPos.x * 4.f/(float)screen::Width, ScrPos.y * 4.f/(float)screen::Height};
     }
+    static inline core::r2 screen_to_graph(core::r2 ScrPos) {
+        ScrPos = {ScrPos.X - screen::Width/2, ScrPos.Y - screen::Height/2};
+        ScrPos.Y *= -1;
+        return {ScrPos.X * 4.f/core::implicit_cast<double>(screen::Width), ScrPos.Y * 4.f/core::implicit_cast<double>(screen::Height)};
+    }
     static inline rl::Vector2 graph_to_screen(rl::Vector2 GPos) {
         GPos = {GPos.x * screen::Width/4, GPos.y * screen::Height/4};
         GPos = {GPos.x, GPos.y * -1};
         GPos = {GPos.x + screen::Width / 2, GPos.y + screen::Height / 2};
+        return GPos;
+    }
+    static inline core::r2 graph_to_screen(core::r2 GPos) {
+        GPos = {GPos.X * core::implicit_cast<double>(screen::Width) /4., GPos.Y *core::implicit_cast<double>(screen::Height)/4.};
+        GPos = {GPos.X, GPos.Y * -1.};
+        GPos = {GPos.X + core::implicit_cast<double>(screen::Width)/2., GPos.Y + core::implicit_cast<double>(screen::Height) / 2.};
         return GPos;
     }
     static inline rl::Color color_lerp(rl::Color Src, rl::Color Dest, float Reduct) {
@@ -65,12 +100,11 @@ namespace rl_combat {
         Color.a = 255;
         return Color;
     }
-    constexpr static inline auto cplx_to_graph(cplx Z) -> rl::Vector2 {
-        return rl_combat::graph_to_screen({core::implicit_cast<float>(real(Z)),core::implicit_cast<float>(imag(Z))});
+    constexpr static inline auto cplx_to_graph(cplx Z) -> core::r2 {
+        return graph_to_screen(std::bit_cast<core::r2>(Z));
     }
-    constexpr static inline auto screen_to_cplx(rl::Vector2 SrcPos) -> cplx {
-        rl::Vector2 GraphPos = rl_combat::screen_to_graph(SrcPos);
-        return { core::implicit_cast<double>(GraphPos.x), core::implicit_cast<double>(GraphPos.y) };
+    constexpr static inline auto screen_to_cplx(core::r2 SrcPos) -> cplx {
+        return std::bit_cast<cplx>(screen_to_graph(SrcPos));
     }
 };
 
@@ -100,7 +134,7 @@ constexpr static auto go_compute_julia = [](cplx JuliaConstant, uint64_t Drawing
         constexpr static uint64_t WorkCapacity = 1 << 21; // defualt == 1 << 21
         for(uint64_t X = StartX; X < SizeOfChunkX + StartX && X < screen::Width; ++X) {
             for(uint64_t Y = StartY; Y < SizeOfChunkY + StartY && Y < screen::Height; ++Y) {
-                cplx Z = rl_combat::screen_to_cplx({core::implicit_cast<float>(X), core::implicit_cast<float>(Y)});
+                cplx Z = rl_combat::screen_to_cplx(core::r2{core::implicit_cast<double>(X), core::implicit_cast<double>(Y)});
                 uint64_t K = 0;
                 for(; K < julia::N; ++K) {
                     if(norm(Z) >= EscapeRadius) break;
@@ -113,7 +147,7 @@ constexpr static auto go_compute_julia = [](cplx JuliaConstant, uint64_t Drawing
                     );
                 };
                 constexpr static auto BetterGradient2 [[maybe_unused]] = [](double Factor) -> float { return pow(Factor, 0.2); };
-                const float Colour = static_cast<float>(K)/static_cast<float>(julia::N);
+                const float Colour = core::implicit_cast<float>(K)/core::implicit_cast<float>(julia::N);
                 julia::JuliaSet[screen::at(X,Y)] = rl_combat::color_lerp(rl::DARKBLUE, rl::ORANGE, BetterGradient2(Colour));
                 julia::DestinationSet[screen::at(X,Y)] = move(Z);
 
@@ -161,7 +195,7 @@ inline void go_compute_mandelbrot() {
         const uint64_t ChunkStart = ChunkSize * Chunk;
         for(uint64_t X = ChunkStart; X < ChunkStart + ChunkSize && X < screen::Width; ++X) {
             for(uint64_t Y = 0; Y < screen::Height; ++Y) {
-                cplx C = rl_combat::screen_to_cplx({core::implicit_cast<float>(X),core::implicit_cast<float>(Y)});
+                cplx C = rl_combat::screen_to_cplx(core::r2{core::implicit_cast<double>(X),core::implicit_cast<double>(Y)});
                 cplx Z = 0.+0.i;
                 uint64_t K = 0;
                 for(; K < julia::N; ++K) {
