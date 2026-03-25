@@ -16,6 +16,12 @@
 #define DEBUG 0
 #endif
 
+namespace core {
+    template<typename U> constexpr U implicit_cast(typename std::type_identity<U>::type Thing) {
+        return Thing;
+    }
+};
+
 namespace screen {
     constexpr const uint64_t Width = 1000;
     constexpr const uint64_t Height = 1000;
@@ -59,9 +65,13 @@ namespace rl_combat {
         Color.a = 255;
         return Color;
     }
-    constexpr auto cplx_to_graph(cplx Z) -> rl::Vector2 {
-        return rl_combat::graph_to_screen({(float)real(Z),(float)imag(Z)});
-    };
+    constexpr static inline auto cplx_to_graph(cplx Z) -> rl::Vector2 {
+        return rl_combat::graph_to_screen({core::implicit_cast<float>(real(Z)),core::implicit_cast<float>(imag(Z))});
+    }
+    constexpr static inline auto screen_to_cplx(rl::Vector2 SrcPos) -> cplx {
+        rl::Vector2 GraphPos = rl_combat::screen_to_graph(SrcPos);
+        return { core::implicit_cast<double>(GraphPos.x), core::implicit_cast<double>(GraphPos.y) };
+    }
 };
 
 static std::binary_semaphore ComputingPixelJulia{1};
@@ -90,8 +100,7 @@ constexpr static auto go_compute_julia = [](cplx JuliaConstant, uint64_t Drawing
         constexpr static uint64_t WorkCapacity = 1 << 21; // defualt == 1 << 21
         for(uint64_t X = StartX; X < SizeOfChunkX + StartX && X < screen::Width; ++X) {
             for(uint64_t Y = StartY; Y < SizeOfChunkY + StartY && Y < screen::Height; ++Y) {
-                rl::Vector2 GraphCord = rl_combat::screen_to_graph({(float)X,(float)Y});
-                cplx Z {(double)GraphCord.x, (double)GraphCord.y};
+                cplx Z = rl_combat::screen_to_cplx({core::implicit_cast<float>(X), core::implicit_cast<float>(Y)});
                 uint64_t K = 0;
                 for(; K < julia::N; ++K) {
                     if(norm(Z) >= EscapeRadius) break;
@@ -152,8 +161,7 @@ inline void go_compute_mandelbrot() {
         const uint64_t ChunkStart = ChunkSize * Chunk;
         for(uint64_t X = ChunkStart; X < ChunkStart + ChunkSize && X < screen::Width; ++X) {
             for(uint64_t Y = 0; Y < screen::Height; ++Y) {
-                rl::Vector2 GraphCord = rl_combat::screen_to_graph({(float)X,(float)Y});
-                cplx C = (double)GraphCord.x + (double)GraphCord.y*1.0i;
+                cplx C = rl_combat::screen_to_cplx({core::implicit_cast<float>(X),core::implicit_cast<float>(Y)});
                 cplx Z = 0.+0.i;
                 uint64_t K = 0;
                 for(; K < julia::N; ++K) {
@@ -193,9 +201,7 @@ int main() {
         rl::ClearBackground(rl::RAYWHITE);
         rl::BeginDrawing();
         if(rl::IsMouseButtonDown(rl::MOUSE_BUTTON_LEFT)) {
-            rl::Vector2 MousePos = rl::GetMousePosition();
-            MousePos = rl_combat::screen_to_graph(MousePos);
-            JuliaConstant = cplx{(double)MousePos.x + ((double)MousePos.y)*1.i};
+            JuliaConstant = rl_combat::screen_to_cplx(rl::GetMousePosition());
 
             if(ComputingPixelJulia.try_acquire()) {
                 thread{go_compute_julia, JuliaConstant, thread::hardware_concurrency() - 2}.detach();

@@ -12,6 +12,7 @@ struct observer {
 
 struct subject {
     std::vector<std::weak_ptr<observer>> Observers;
+
     enum signal {
         PRINT_ME,
     } Signal;
@@ -33,7 +34,7 @@ struct subject {
     }
 };
 
-#ifdef 0
+#if 0
 #include <string>
 struct display: observer {
     virtual void handle(subject &From) override try {
