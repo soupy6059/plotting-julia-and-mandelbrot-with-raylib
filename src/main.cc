@@ -17,6 +17,7 @@
 #endif
 
 namespace core {
+    #define anno(X) do { if constexpr(DEBUG) std::clog << (X); } while(false)
     template<typename U> constexpr U implicit_cast(typename std::type_identity<U>::type Thing) {
         return Thing;
     }
@@ -70,21 +71,10 @@ namespace julia {
 };
 
 namespace rl_combat {
-    static inline rl::Vector2 screen_to_graph(rl::Vector2 ScrPos) {
-        ScrPos = {ScrPos.x - screen::Width/2, ScrPos.y - screen::Height/2};
-        ScrPos.y *= -1;
-        return {ScrPos.x * 4.f/(float)screen::Width, ScrPos.y * 4.f/(float)screen::Height};
-    }
     static inline core::r2 screen_to_graph(core::r2 ScrPos) {
         ScrPos = {ScrPos.X - screen::Width/2, ScrPos.Y - screen::Height/2};
         ScrPos.Y *= -1;
         return {ScrPos.X * 4.f/core::implicit_cast<double>(screen::Width), ScrPos.Y * 4.f/core::implicit_cast<double>(screen::Height)};
-    }
-    static inline rl::Vector2 graph_to_screen(rl::Vector2 GPos) {
-        GPos = {GPos.x * screen::Width/4, GPos.y * screen::Height/4};
-        GPos = {GPos.x, GPos.y * -1};
-        GPos = {GPos.x + screen::Width / 2, GPos.y + screen::Height / 2};
-        return GPos;
     }
     static inline core::r2 graph_to_screen(core::r2 GPos) {
         GPos = {GPos.X * core::implicit_cast<double>(screen::Width) /4., GPos.Y *core::implicit_cast<double>(screen::Height)/4.};
@@ -92,11 +82,11 @@ namespace rl_combat {
         GPos = {GPos.X + core::implicit_cast<double>(screen::Width)/2., GPos.Y + core::implicit_cast<double>(screen::Height) / 2.};
         return GPos;
     }
-    static inline rl::Color color_lerp(rl::Color Src, rl::Color Dest, float Reduct) {
+    static inline rl::Color color_lerp(rl::Color Src, rl::Color Dest, double Reduct) {
         rl::Color Color = {0};
-        Color.r = Reduct * Dest.r + (1.f-Reduct) * Src.r;
-        Color.g = Reduct * Dest.g + (1.f-Reduct) * Src.g;
-        Color.b = Reduct * Dest.b + (1.f-Reduct) * Src.b;
+        Color.r = Reduct * Dest.r + (1.-Reduct) * Src.r;
+        Color.g = Reduct * Dest.g + (1.-Reduct) * Src.g;
+        Color.b = Reduct * Dest.b + (1.-Reduct) * Src.b;
         Color.a = 255;
         return Color;
     }
@@ -141,15 +131,11 @@ constexpr static auto go_compute_julia = [](cplx JuliaConstant, uint64_t Drawing
                     Z = JuliaFunc(Z);
                     ++Work;
                 }
-                constexpr static auto BetterGradient [[maybe_unused]] = [](double Factor) -> float {
-                    return static_cast<float>(
-                        1./(1.+exp(-10.*(Factor-0.25)))
-                    );
-                };
-                constexpr static auto BetterGradient2 [[maybe_unused]] = [](double Factor) -> float { return pow(Factor, 0.2); };
-                const float Colour = core::implicit_cast<float>(K)/core::implicit_cast<float>(julia::N);
+                constexpr static auto BetterGradient [[maybe_unused]] = [](double Factor) -> double { return 1./(1.+exp(-10.*(Factor-0.25))); };
+                constexpr static auto BetterGradient2 [[maybe_unused]] = [](double Factor) -> double { return pow(Factor, 0.2); };
+                const double Colour = core::implicit_cast<double>(K)/core::implicit_cast<double>(julia::N);
                 julia::JuliaSet[screen::at(X,Y)] = rl_combat::color_lerp(rl::DARKBLUE, rl::ORANGE, BetterGradient2(Colour));
-                julia::DestinationSet[screen::at(X,Y)] = move(Z);
+                julia::DestinationSet[screen::at(X,Y)] = Z;
 
                 if(!SplitHorizontally && Work >= WorkCapacity && SizeOfChunkX > 3 && Alive.load(memory_order::acquire) < ThreadCountMax) {
                     SizeOfChunkX *= 2.f/3.f;
@@ -165,11 +151,11 @@ constexpr static auto go_compute_julia = [](cplx JuliaConstant, uint64_t Drawing
                     SplitHorizontally = !SplitHorizontally;
                 }
             }
-        }
+        } // end for(X) for(Y) for(K)
         if constexpr(DEBUG) if(Work >= WorkCapacity) clog << "Thread " << this_thread::get_id() << " did " << Work << " work\n";
         if(Alive.fetch_sub(1, memory_order::acq_rel) == 1) Alive.notify_all();
         ComputeRights.release();
-    };
+    }; // end thread's code
 
     for(uint64_t InitThread = 0; InitThread < DrawingThreadCount; ++InitThread) {
         thread{ ComputeLine, InitThread*XsPerThread, 0, XsPerThread, screen::Height}.detach();
@@ -195,14 +181,16 @@ inline void go_compute_mandelbrot() {
         const uint64_t ChunkStart = ChunkSize * Chunk;
         for(uint64_t X = ChunkStart; X < ChunkStart + ChunkSize && X < screen::Width; ++X) {
             for(uint64_t Y = 0; Y < screen::Height; ++Y) {
-                cplx C = rl_combat::screen_to_cplx(core::r2{core::implicit_cast<double>(X),core::implicit_cast<double>(Y)});
+                using namespace rl_combat;
+                using namespace core;
+                cplx C = screen_to_cplx(r2{implicit_cast<double>(X),implicit_cast<double>(Y)});
                 cplx Z = 0.+0.i;
                 uint64_t K = 0;
                 for(; K < julia::N; ++K) {
                     if(abs(Z) >= 2.) break;
                     Z = julia::Func(C)(Z);
                 }
-                julia::MandelbrotSet[screen::at(X,Y)] = rl_combat::color_lerp(rl::RAYWHITE, rl::RED, (float)K/(float)julia::N);
+                julia::MandelbrotSet[screen::at(X,Y)] = color_lerp(rl::RAYWHITE, rl::RED, implicit_cast<double>(K)/implicit_cast<double>(julia::N));
             }
         }
     };
