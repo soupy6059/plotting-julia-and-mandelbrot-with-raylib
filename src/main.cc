@@ -10,6 +10,7 @@
 #include <string>
 #include <random>
 #include <thread>
+#include <cstring>
 #include "craylib.hpp"
 
 #ifndef DEBUG
@@ -24,16 +25,22 @@ namespace core {
     struct r2 {
         double X, Y;
         constexpr r2(double X, double Y): X{X}, Y{Y} {}
+        constexpr r2(std::complex<double> Z) { 
+            memcpy(this, &Z, sizeof(*this));
+        }
         constexpr r2(const r2&) = default;
         constexpr r2 &operator=(const core::r2&) = default;
-        r2 operator+(r2 &Other) {
+        r2 operator+(r2 const&Other) {
             return {X + Other.X, Y + Other.Y};
         }
-        r2 operator-(r2 &Other) {
+        r2 operator-(r2 const&Other) {
             return {X - Other.X, Y - Other.Y};
         }
-        r2 operator*(double &Other) {
+        r2 operator*(double const&Other) {
             return {X * Other, Y * Other};
+        }
+        operator std::complex<double>() {
+            return {X, Y};
         }
         #ifdef RAYLIB
         r2(rl::Vector2 RayVec): X{implicit_cast<double>(RayVec.x)}, Y{implicit_cast<double>(RayVec.y)} {}
@@ -51,6 +58,8 @@ namespace screen {
     constexpr const uint64_t Width = 1000;
     constexpr const uint64_t Height = 1000;
     constexpr const char *const Name = "Julia Plotting";
+    constinit static double Zoom = 1.;
+    constinit static core::r2 Center {0.,0.};
     static inline uint64_t at(uint64_t X, uint64_t Y) {
         return X + Width * Y;
     }
@@ -71,12 +80,20 @@ namespace julia {
 };
 
 namespace rl_combat {
+    static inline core::r2 screen_to_graph_normal(core::r2 ScrPos) {
+        ScrPos = {ScrPos.X - screen::Width/2, ScrPos.Y - screen::Height/2};
+        ScrPos.Y *= -1;
+        core::r2 GraphPos = {ScrPos.X * 4.f/core::implicit_cast<double>(screen::Width), ScrPos.Y * 4.f/core::implicit_cast<double>(screen::Height)};
+        return GraphPos;
+    }
     static inline core::r2 screen_to_graph(core::r2 ScrPos) {
         ScrPos = {ScrPos.X - screen::Width/2, ScrPos.Y - screen::Height/2};
         ScrPos.Y *= -1;
-        return {ScrPos.X * 4.f/core::implicit_cast<double>(screen::Width), ScrPos.Y * 4.f/core::implicit_cast<double>(screen::Height)};
+        core::r2 GraphPos = {ScrPos.X * 4.f/core::implicit_cast<double>(screen::Width), ScrPos.Y * 4.f/core::implicit_cast<double>(screen::Height)};
+        return GraphPos * screen::Zoom - screen::Center;
     }
     static inline core::r2 graph_to_screen(core::r2 GPos) {
+        GPos = (GPos+screen::Center) * (1./screen::Zoom);
         GPos = {GPos.X * core::implicit_cast<double>(screen::Width) /4., GPos.Y *core::implicit_cast<double>(screen::Height)/4.};
         GPos = {GPos.X, GPos.Y * -1.};
         GPos = {GPos.X + core::implicit_cast<double>(screen::Width)/2., GPos.Y + core::implicit_cast<double>(screen::Height) / 2.};
@@ -89,9 +106,6 @@ namespace rl_combat {
         Color.b = Reduct * Dest.b + (1.-Reduct) * Src.b;
         Color.a = 255;
         return Color;
-    }
-    constexpr static inline auto cplx_to_graph(cplx Z) -> core::r2 {
-        return graph_to_screen(std::bit_cast<core::r2>(Z));
     }
     constexpr static inline auto screen_to_cplx(core::r2 SrcPos) -> cplx {
         return std::bit_cast<cplx>(screen_to_graph(SrcPos));
@@ -124,7 +138,8 @@ constexpr static auto go_compute_julia = [](cplx JuliaConstant, uint64_t Drawing
         constexpr static uint64_t WorkCapacity = 1 << 21; // defualt == 1 << 21
         for(uint64_t X = StartX; X < SizeOfChunkX + StartX && X < screen::Width; ++X) {
             for(uint64_t Y = StartY; Y < SizeOfChunkY + StartY && Y < screen::Height; ++Y) {
-                cplx Z = rl_combat::screen_to_cplx(core::r2{core::implicit_cast<double>(X), core::implicit_cast<double>(Y)});
+                using namespace core;
+                cplx Z = rl_combat::screen_to_cplx(r2{implicit_cast<double>(X), implicit_cast<double>(Y)});
                 uint64_t K = 0;
                 for(; K < julia::N; ++K) {
                     if(norm(Z) >= EscapeRadius) break;
@@ -133,8 +148,8 @@ constexpr static auto go_compute_julia = [](cplx JuliaConstant, uint64_t Drawing
                 }
                 constexpr static auto BetterGradient [[maybe_unused]] = [](double Factor) -> double { return 1./(1.+exp(-10.*(Factor-0.25))); };
                 constexpr static auto BetterGradient2 [[maybe_unused]] = [](double Factor) -> double { return pow(Factor, 0.2); };
-                const double Colour = core::implicit_cast<double>(K)/core::implicit_cast<double>(julia::N);
-                julia::JuliaSet[screen::at(X,Y)] = rl_combat::color_lerp(rl::DARKBLUE, rl::ORANGE, BetterGradient2(Colour));
+                const double Colour = implicit_cast<double>(K)/implicit_cast<double>(julia::N);
+                julia::JuliaSet[screen::at(X,Y)] = rl_combat::color_lerp(rl::DARKBLUE, rl::ORANGE, Colour);
                 julia::DestinationSet[screen::at(X,Y)] = Z;
 
                 if(!SplitHorizontally && Work >= WorkCapacity && SizeOfChunkX > 3 && Alive.load(memory_order::acquire) < ThreadCountMax) {
@@ -223,7 +238,8 @@ int main() {
         rl::ClearBackground(rl::RAYWHITE);
         rl::BeginDrawing();
         if(rl::IsMouseButtonDown(rl::MOUSE_BUTTON_LEFT)) {
-            JuliaConstant = rl_combat::screen_to_cplx(rl::GetMousePosition());
+            // might default this?
+            JuliaConstant = rl_combat::screen_to_graph_normal(rl::GetMousePosition());
 
             if(ComputingPixelJulia.try_acquire()) {
                 thread{go_compute_julia, JuliaConstant, thread::hardware_concurrency() - 2}.detach();
@@ -233,8 +249,17 @@ int main() {
         if(rl::IsKeyPressed(rl::KEY_SPACE)) {
             DisplayMandelbrot = !DisplayMandelbrot;
         }
-        if(rl::IsKeyPressed(rl::KEY_D)) {
+        if(rl::IsKeyPressed(rl::KEY_M)) {
             DisplayDestinationSet = !DisplayDestinationSet;
+        }
+        if(ComputingPixelJulia.try_acquire()) {
+            if(rl::IsKeyDown(rl::KEY_UP)) { screen::Zoom += 0.1 * rl::GetFrameTime(); }
+            if(rl::IsKeyDown(rl::KEY_DOWN)) { screen::Zoom -= 0.1 * rl::GetFrameTime(); }
+            if(rl::IsKeyDown(rl::KEY_W)) screen::Center = screen::Center + core::r2{0.0,0.1} * rl::GetFrameTime();
+            if(rl::IsKeyDown(rl::KEY_A)) screen::Center = screen::Center + core::r2{-0.1,0.0} * rl::GetFrameTime();
+            if(rl::IsKeyDown(rl::KEY_S)) screen::Center = screen::Center + core::r2{0.0,-0.1} * rl::GetFrameTime();
+            if(rl::IsKeyDown(rl::KEY_D)) screen::Center = screen::Center + core::r2{0.1,0.0} * rl::GetFrameTime();
+            ComputingPixelJulia.release();
         }
 
         for(uint64_t X = 0; X < screen::Width; ++X)
@@ -247,7 +272,7 @@ int main() {
                 }
                 else rl::DrawPixel(X, Y, julia::JuliaSet[screen::at(X,Y)]);
                 if(DisplayDestinationSet)
-                    rl::DrawCircleV(rl_combat::cplx_to_graph(julia::DestinationSet[screen::at(X,Y)]), 10.f, rl::BLACK);
+                    rl::DrawCircleV(core::implicit_cast<core::r2>(julia::DestinationSet[screen::at(X,Y)]), 10.f, rl::BLACK);
             }
 
         rl::DrawFPS(10,10);
@@ -256,6 +281,10 @@ int main() {
         {
             string Str = "C == {" + to_string(real(JuliaConstant)) + " + " + to_string(imag(JuliaConstant)) + "i}";
             rl::DrawText(Str.c_str(), 10, 30, 20, rl::ORANGE);
+            string Zoom = "Zoom == " + to_string(screen::Zoom) + "\n";
+            rl::DrawText(Zoom.c_str(), 10, 50, 20, rl::ORANGE);
+            string CenterPos = "Center = " + to_string(screen::Center.X) + ", " + to_string(screen::Center.Y);
+            rl::DrawText(CenterPos.c_str(), 10, 70, 20, rl::RED);
 
             // cplx FixedPoint = (1.-sqrt(1.-4.*JuliaConstant))/2.;
             // rl::DrawCircleV(CplxToGraph(FixedPoint), 5.f, rl::BLACK);
@@ -266,7 +295,7 @@ int main() {
         if constexpr(DEBUG) {
             rl::DrawText(
                 ("Alive == " + to_string(Alive.load(memory_order::acquire))).c_str(),
-            10, 50, 20, rl::ORANGE);
+            10, 90, 20, rl::ORANGE);
         }
 
         rl::EndDrawing();
