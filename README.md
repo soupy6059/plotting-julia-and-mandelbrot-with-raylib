@@ -1,8 +1,6 @@
 # Plotting Juliasets with C++ and Raylib
-## Whats Left to Do
-Floats and doubles are slow. It would be better to use greedy rationals (no invariants because i don't care).
-Then we'd have to implement our own complex rational.
-Then our own operators, and a square function.
+
+Using parallelism (upto ```std::thread::hardware_concurrency()``` many "working" threads) and concurrency (no spinning, inactive threads wait on a semaphore for the right to begin computing the julia set).
 
 <img width="985" height="986" alt="image" src="https://github.com/user-attachments/assets/71bf158b-b051-4651-9faf-5addcddf0b88" />
 
