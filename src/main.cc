@@ -63,6 +63,9 @@ namespace screen {
     static inline uint64_t at(uint64_t X, uint64_t Y) {
         return X + Width * Y;
     }
+    //constexpr static inline rl::Color hex_to_color(int 00000000
+    static rl::Color ELECTRIC_AQUA = rl::GetColor(0x51E5FFFF);
+    static rl::Color INDIGO = rl::GetColor(0x440381FF);
 };
 
 using cplx = std::complex<double>;
@@ -71,7 +74,7 @@ namespace julia {
     static rl::Color JuliaSet[screen::Width*screen::Height];
     static rl::Color MandelbrotSet[screen::Width*screen::Height];
     static cplx DestinationSet[screen::Width*screen::Height];
-    constexpr uint64_t N = 1000;
+    constexpr uint64_t N = 100;
     static auto Func = [](cplx C) -> func<cplx(cplx)> {
         return [C](cplx Z) -> cplx {
             return std::pow(Z, cplx{2.0}) + C;
@@ -148,8 +151,8 @@ constexpr static auto go_compute_julia = [](cplx JuliaConstant, uint64_t Drawing
                 }
                 constexpr static auto BetterGradient [[maybe_unused]] = [](double Factor) -> double { return 1./(1.+exp(-10.*(Factor-0.25))); };
                 constexpr static auto BetterGradient2 [[maybe_unused]] = [](double Factor) -> double { return pow(Factor, 0.2); };
-                const double Colour = implicit_cast<double>(K)/implicit_cast<double>(julia::N);
-                julia::JuliaSet[screen::at(X,Y)] = rl_combat::color_lerp(rl::DARKBLUE, rl::ORANGE, Colour);
+                const double Colour = implicit_cast<double>(K%5)/implicit_cast<double>(5);
+                julia::JuliaSet[screen::at(X,Y)] = rl_combat::color_lerp(screen::ELECTRIC_AQUA, screen::INDIGO, Colour);
                 julia::DestinationSet[screen::at(X,Y)] = Z;
 
                 if(!SplitHorizontally && Work >= WorkCapacity && SizeOfChunkX > 3 && Alive.load(memory_order::acquire) < ThreadCountMax) {
@@ -246,19 +249,15 @@ int main() {
             }
         }
 
-        if(rl::IsKeyPressed(rl::KEY_SPACE)) {
-            DisplayMandelbrot = !DisplayMandelbrot;
-        }
-        if(rl::IsKeyPressed(rl::KEY_M)) {
-            DisplayDestinationSet = !DisplayDestinationSet;
-        }
+        if(rl::IsKeyPressed(rl::KEY_SPACE)) DisplayMandelbrot = !DisplayMandelbrot;
+        if(rl::IsKeyPressed(rl::KEY_M)) DisplayDestinationSet = !DisplayDestinationSet;
         if(ComputingPixelJulia.try_acquire()) {
             if(rl::IsKeyDown(rl::KEY_UP)) { screen::Zoom += 0.1 * rl::GetFrameTime(); }
             if(rl::IsKeyDown(rl::KEY_DOWN)) { screen::Zoom -= 0.1 * rl::GetFrameTime(); }
-            if(rl::IsKeyDown(rl::KEY_W)) screen::Center = screen::Center + core::r2{0.0,0.1} * rl::GetFrameTime();
-            if(rl::IsKeyDown(rl::KEY_A)) screen::Center = screen::Center + core::r2{-0.1,0.0} * rl::GetFrameTime();
-            if(rl::IsKeyDown(rl::KEY_S)) screen::Center = screen::Center + core::r2{0.0,-0.1} * rl::GetFrameTime();
-            if(rl::IsKeyDown(rl::KEY_D)) screen::Center = screen::Center + core::r2{0.1,0.0} * rl::GetFrameTime();
+            if(rl::IsKeyDown('W')) screen::Center = screen::Center + core::r2{0.0,0.1} * rl::GetFrameTime();
+            if(rl::IsKeyDown('A')) screen::Center = screen::Center + core::r2{-0.1,0.0} * rl::GetFrameTime();
+            if(rl::IsKeyDown('S')) screen::Center = screen::Center + core::r2{0.0,-0.1} * rl::GetFrameTime();
+            if(rl::IsKeyDown('D')) screen::Center = screen::Center + core::r2{0.1,0.0} * rl::GetFrameTime();
             ComputingPixelJulia.release();
         }
 
