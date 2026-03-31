@@ -1,6 +1,7 @@
 # Plotting Juliasets with C++ and Raylib
 
 Using parallelism (upto ```std::thread::hardware_concurrency()``` many "working" threads) and concurrency (no spinning, inactive threads wait on a semaphore for the right to begin computing the julia set).
+If a thread encounters too much work, it'll spawn a new thread an delegate it half of it's own.
 
 Uses ```core::implicit_cast<type>(...)``` to minimize use of ```static_cast<type>(...)```, as it's too strong to be casting numbers. Don't eat pancakes with a shotgun, basically.
 
