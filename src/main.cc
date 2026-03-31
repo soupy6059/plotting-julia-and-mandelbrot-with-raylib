@@ -101,7 +101,7 @@ namespace julia {
 
     static cplx DestinationSet[screen::Width*screen::Height];
 
-    constexpr uint64_t N = 100;
+    constexpr uint64_t N = 1000;
 
     static auto Func = [](cplx C) -> func<cplx(cplx)> {
         return [C](cplx Z) -> cplx {
@@ -257,7 +257,11 @@ inline void go_compute_mandelbrot() {
                     if(abs(Z) >= 2.) break;
                     Z = julia::Func(C)(Z);
                 }
-                julia::MandelbrotSet[screen::at(X,Y)] = color_lerp(rl::RAYWHITE, rl::RED, implicit_cast<double>(K)/implicit_cast<double>(julia::N));
+                julia::MandelbrotSet[screen::at(X,Y)] =
+                    color_lerp(rl::RAYWHITE, rl::RED, 
+                            implicit_cast<double>(K)
+                            /implicit_cast<double>(julia::N)
+                    );
             }
         }
     };
