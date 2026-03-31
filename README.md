@@ -2,6 +2,10 @@
 
 Using parallelism (upto ```std::thread::hardware_concurrency()``` many "working" threads) and concurrency (no spinning, inactive threads wait on a semaphore for the right to begin computing the julia set).
 
+Uses ```core::implicit_cast<type>(...)``` to minimize use of ```static_cast<type>(...)```, as it's too strong to be casting numbers. Don't eat pancakes with a shotgun, basically.
+
+Uses ```std::memory_order::(...)``` to manage the ```std::atomic<uint64_t>``` lazily. This is also where we prevent spinning by waiting on if the atomic is mutated.
+
 <img width="985" height="986" alt="image" src="https://github.com/user-attachments/assets/71bf158b-b051-4651-9faf-5addcddf0b88" />
 
 
