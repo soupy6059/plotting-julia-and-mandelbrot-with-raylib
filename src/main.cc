@@ -94,6 +94,8 @@ using cplx = std::complex<double>;
 
 template<typename type> using func = std::function<type>;
 
+template<typename type> using product = std::pair<type,type>;
+
 namespace julia {
     static rl::Color JuliaSet[screen::Width*screen::Height];
 
@@ -101,7 +103,7 @@ namespace julia {
 
     static cplx DestinationSet[screen::Width*screen::Height];
 
-    constexpr uint64_t N = 1000;
+    constexpr uint64_t N = 100;
 
     static auto Func = [](cplx C) -> func<cplx(cplx)> {
         return [C](cplx Z) -> cplx {
@@ -182,14 +184,17 @@ constexpr static auto go_compute_julia =
 
     double EscapeRadius = pow((1. + sqrt(1 + 4.*abs(JuliaConstant)))/2., 2.0);
 
-    function<void(uint64_t,uint64_t,uint64_t,uint64_t)> ComputeLine; 
-    ComputeLine = [&,JuliaConstant,JuliaFunc](uint64_t StartX, uint64_t StartY,
-    uint64_t SizeOfChunkX, uint64_t SizeOfChunkY) -> void {
+    struct bound {
+        uint64_t Start;
+        uint64_t Size;
+    };
+    function<void(product<bound>)> ComputeLine; 
+    ComputeLine = [&,JuliaConstant,JuliaFunc](product<bound> Chunks) -> void {
         ComputeRights.acquire();
         uint64_t Work = 0;
         constexpr static uint64_t WorkCapacity = 1 << 21; // defualt == 1 << 21
-        for(uint64_t X = StartX; X < SizeOfChunkX + StartX && X < screen::Width; ++X) {
-            for(uint64_t Y = StartY; Y < SizeOfChunkY + StartY && Y < screen::Height; ++Y) {
+        for(uint64_t X = Chunks.first.Start; X < Chunks.first.Size + Chunks.first.Start && X < screen::Width; ++X) {
+            for(uint64_t Y = Chunks.second.Start; Y < Chunks.second.Size + Chunks.second.Start && Y < screen::Height; ++Y) {
                 using namespace core;
                 cplx Z = rl_combat::screen_to_cplx(r2{implicit_cast<double>(X), implicit_cast<double>(Y)});
                 uint64_t K = 0;
@@ -200,20 +205,32 @@ constexpr static auto go_compute_julia =
                 }
                 constexpr static auto BetterGradient [[maybe_unused]] = [](double Factor) -> double { return 1./(1.+exp(-10.*(Factor-0.25))); };
                 constexpr static auto BetterGradient2 [[maybe_unused]] = [](double Factor) -> double { return pow(Factor, 0.2); };
-                const double Colour = implicit_cast<double>(K%5)/implicit_cast<double>(5);
+                const double Colour = implicit_cast<double>(K)/implicit_cast<double>(julia::N);
                 julia::JuliaSet[screen::at(X,Y)] = rl_combat::color_lerp(screen::ELECTRIC_AQUA, screen::INDIGO, Colour);
                 julia::DestinationSet[screen::at(X,Y)] = Z;
 
-                if(!SplitHorizontally && Work >= WorkCapacity && SizeOfChunkX > 3 && Alive.load(memory_order::acquire) < ThreadCountMax) {
-                    SizeOfChunkX *= 2.f/3.f;
+                if(!SplitHorizontally && Work >= WorkCapacity && Chunks.first.Size > 3 && Alive.load(memory_order::acquire) < ThreadCountMax) {
+                    Chunks.first.Size *= 2.f/3.f;
                     Alive.fetch_add(1, memory_order::relaxed);
-                    thread{ComputeLine, StartX + SizeOfChunkX-1, StartY, SizeOfChunkX/2.f+2, SizeOfChunkY}.detach();
+                    thread{ComputeLine, product<bound>{ {
+                        .Start = Chunks.first.Start + Chunks.first.Size - 1,
+                        .Size = implicit_cast<uint64_t>(Chunks.first.Size/2.f + 2.f),
+                    }, {
+                        .Start = Chunks.second.Start,
+                        .Size = Chunks.second.Size,
+                    }}}.detach();
                     Work = 0;
                     SplitHorizontally = !SplitHorizontally;
-                } else if(Work >= WorkCapacity && SizeOfChunkY > 3 && Alive.load(memory_order::acquire) < ThreadCountMax) {
-                    SizeOfChunkY *= 2.f/3.f;
+                } else if(Work >= WorkCapacity && Chunks.second.Size > 3 && Alive.load(memory_order::acquire) < ThreadCountMax) {
+                    Chunks.second.Size *= 2.f/3.f;
                     Alive.fetch_add(1, memory_order::relaxed);
-                    thread{ComputeLine, StartX, StartY + SizeOfChunkY-1, SizeOfChunkX, SizeOfChunkY/2.f+2}.detach();
+                    thread{ComputeLine, product<bound>{{
+                        .Start = Chunks.first.Start,
+                        .Size = Chunks.first.Size,
+                    }, {
+                        .Start = Chunks.second.Start + Chunks.second.Size - 1, 
+                        .Size = implicit_cast<uint64_t>(Chunks.second.Size/2.f + 2.f),
+                    }}}.detach();
                     Work = 0;
                     SplitHorizontally = !SplitHorizontally;
                 }
@@ -225,7 +242,7 @@ constexpr static auto go_compute_julia =
     }; // end thread's code
 
     for(uint64_t InitThread = 0; InitThread < DrawingThreadCount; ++InitThread) {
-        thread{ ComputeLine, InitThread*XsPerThread, 0, XsPerThread, screen::Height}.detach();
+        thread{ ComputeLine, product<bound>{{InitThread*XsPerThread,XsPerThread}, {0, screen::Height}}}.detach();
     }
 
     uint64_t Old = Alive.load(memory_order::acquire);
@@ -298,7 +315,7 @@ int main() {
             JuliaConstant = rl_combat::screen_to_graph_normal(rl::GetMousePosition());
 
             if(ComputingPixelJulia.try_acquire()) {
-                thread{go_compute_julia, JuliaConstant, thread::hardware_concurrency() - 2}.detach();
+                thread{go_compute_julia, JuliaConstant, thread::hardware_concurrency() - 3}.detach();
             }
         }
 
